@@ -7,3 +7,6 @@ from ._astropy_init import *   # noqa
 # ----------------------------------------------------------------------------
 
 __all__ = []
+
+from .UVSpectra import *
+from .uvDataMixin import *
