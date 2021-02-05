@@ -19,6 +19,12 @@ from astroquery.simbad import Simbad
 
 directory = os.path.dirname(__file__)
 
+cite_these = {
+    "pymccorrelation":"https://github.com/privong/pymccorrelation",
+    "Kendall's Tau with censoring": "https://ui.adsabs.harvard.edu/abs/1986ApJ...306..490I/abstract",
+    "pyKrige":"DOI:10.5281/zenodo.3991907"
+}
+
 class UVSpectra(UVSpectraMixin, Table):
     """
     Core UV Spectra class
@@ -291,4 +297,7 @@ class UVSpectra(UVSpectraMixin, Table):
 
         self._make_table_from_cols(table, newcols, verify=False, names=self.columns.keys())
         return table
+
+    def _cite(self):
+        return cite_these
         
