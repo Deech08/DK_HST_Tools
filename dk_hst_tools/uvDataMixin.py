@@ -6,11 +6,15 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 from matplotlib import cm
-from matplotlib.colors import Normalize
+from matplotlib.colors import Normalize, LogNorm
 
 from pymccorrelation import pymccorrelation
 
 from pykrige.uk import UniversalKriging
+
+import os
+
+from spectral_cube import SpectralCube
 
 
 
@@ -263,8 +267,10 @@ class UVSpectraMixin(object):
                         log = False, 
                         add_labels = True,
                         colorbar = False,
-                        add_LMC_marker = True,
+                        add_LMC_marker = False,
+                        add_SMC_marker = False,
                         add_LMC_label = True, 
+                        add_SMC_label = True, 
                         krig = False,
                         UK = None,
                         mask_limits_for_krig = True,
@@ -277,7 +283,9 @@ class UVSpectraMixin(object):
                         wrap_at = None,
                         return_krig_ss = False,
                         LMC_kwargs = {},
+                        SMC_kwargs = {},
                         LMC_label_kwargs = {},
+                        SMC_label_kwargs = {},
                         colorbar_kwargs = {},
                         krig_kwargs = {},
                         im_kwargs = {},
@@ -302,6 +310,8 @@ class UVSpectraMixin(object):
             if True, plots marker for LMC location
         add_LMC_label: `bool`, optional, must be keyword
             if True, adds label for LMC location
+        add_SMC_label: `bool`, optional, must be keyword
+            if True, adds label for LMC location
         krig: `bool`, optional, must be keyword
             if True, interpolates with krigging
         return_krig_ss: `bool`, optional, must be keyword
@@ -318,7 +328,11 @@ class UVSpectraMixin(object):
             angle to wrap longitude at
         LMC_kwargs: `dict`
             keywords for adding LMC marker
+        SMC_kwargs: `dict`
+            keywords for adding LMC marker
         LMC_label_kwargs: `dict`
+            keywords for LMC label text
+        SMC_label_kwargs: `dict`
             keywords for LMC label text
         colorbar_kwargs: `dict`, optional, must be keyword
             dictionary of keywords to pass to plotting of colorbar
@@ -429,6 +443,8 @@ class UVSpectraMixin(object):
                 LMC_kwargs["alpha"] = 0.2
             if "zorder" not in LMC_kwargs:
                 LMC_kwargs["zorder"] = -1
+            if ("transform" in kwargs) & ("transform" not in LMC_kwargs):
+                LMC_kwargs["transform"] = kwargs["transform"]
 
             if coord_names[0].lower() == "default":
                 try:
@@ -444,6 +460,35 @@ class UVSpectraMixin(object):
 
 
             lmc_s = ax.scatter(lmc_x, lmc_y, **LMC_kwargs)
+        if add_SMC_marker:
+            #Check LMC_kwargs
+            if "color" not in SMC_kwargs:
+                SMC_kwargs["color"] = "k"
+            if "s" not in SMC_kwargs:
+                SMC_kwargs["s"] = 10000
+            if "marker" not in SMC_kwargs:
+                SMC_kwargs["marker"] = "*"
+            if "alpha" not in SMC_kwargs:
+                SMC_kwargs["alpha"] = 0.2
+            if "zorder" not in SMC_kwargs:
+                SMC_kwargs["zorder"] = -1
+            if ("transform" in kwargs) & ("transform" not in SMC_kwargs):
+                SMC_kwargs["transform"] = kwargs["transform"]
+
+            if coord_names[0].lower() == "default":
+                try:
+                    smc_x = self.SMC_coords.transform_to(frame).l.wrap_at(wrap_at).value
+                    smc_y = self.SMC_coords.transform_to(frame).b.value
+                except AttributeError:
+                    smc_x = self.SMC_coords.transform_to(frame).ra.to(u.deg).value
+                    smc_y = self.SMC_coords.transform_to(frame).dec.to(u.deg).value
+            else:
+                exec("smc_x = self.SMC_coords.transform_to(frame).{}.value".format(coord_names[0]))
+                exec("smc_y = self.SMC_coords.transform_to(frame).{}.value".format(coord_names[1]))
+
+
+
+            smc_s = ax.scatter(smc_x, smc_y, **SMC_kwargs)
 
         if add_LMC_label:
             # check kwargs
@@ -457,6 +502,8 @@ class UVSpectraMixin(object):
                 LMC_label_kwargs["fontsize"] = 12
             if "color" not in LMC_label_kwargs:
                 LMC_label_kwargs["color"] = "k"
+            if ("transform" in kwargs) & ("transform" not in LMC_label_kwargs):
+                LMC_label_kwargs["transform"] = kwargs["transform"]
 
             if coord_names[0].lower() == "default":
                 try:
@@ -470,6 +517,34 @@ class UVSpectraMixin(object):
                 exec("lmc_y = self.LMC_coords.transform_to(frame).{}.value".format(coord_names[1]))
 
             lmc_l = ax.text(lmc_x, lmc_y, "LMC", **LMC_label_kwargs)
+
+        if add_SMC_label:
+            # check kwargs
+            if "ha" not in SMC_label_kwargs:
+                SMC_label_kwargs["ha"] = "center"
+            if "va" not in SMC_label_kwargs:
+                SMC_label_kwargs["va"] = "center"
+            if "fontweight" not in SMC_label_kwargs:
+                SMC_label_kwargs["fontweight"] = "bold"
+            if "fontsize" not in SMC_label_kwargs:
+                SMC_label_kwargs["fontsize"] = 12
+            if "color" not in SMC_label_kwargs:
+                SMC_label_kwargs["color"] = "k"
+            if ("transform" in kwargs) & ("transform" not in SMC_label_kwargs):
+                SMC_label_kwargs["transform"] = kwargs["transform"]
+
+            if coord_names[0].lower() == "default":
+                try:
+                    smc_x = self.SMC_coords.transform_to(frame).l.wrap_at(wrap_at).value
+                    smc_y = self.SMC_coords.transform_to(frame).b.value
+                except AttributeError:
+                    smc_x = self.SMC_coords.transform_to(frame).ra.to(u.deg).value
+                    smc_y = self.SMC_coords.transform_to(frame).dec.to(u.deg).value
+            else:
+                exec("smc_x = self.SMC_coords.transform_to(frame).{}.value".format(coord_names[0]))
+                exec("smc_y = self.SMC_coords.transform_to(frame).{}.value".format(coord_names[1]))
+
+            smc_l = ax.text(smc_x, smc_y, "SMC", **SMC_label_kwargs)
 
         if (UK is not None) | (krig):
 
@@ -505,7 +580,7 @@ class UVSpectraMixin(object):
                 im_kwargs["norm"] = kwargs["norm"]
             if ("zorder" not in im_kwargs):
                 im_kwargs["zorder"] = -2
-       
+
 
 
             im = ax.imshow(z_pred, extent = extent, **im_kwargs)
@@ -515,6 +590,229 @@ class UVSpectraMixin(object):
 
         return ax
 
+
+
+
+    def plot_LMC_HI_map(self, 
+                        cube = None,
+                        ax = None, 
+                        region_str = None, 
+                        clip_mask = True, 
+                        clip_value = None, 
+                        use_wcs = True,
+                        fit_to_ax = False, 
+                        vel_range = None,
+                        colorbar = False,
+                        colorbar_kwargs = {},
+                        frame = None,
+                        order = None,
+                        column_density = True,
+                        **kwargs):
+        """
+        Plots HI Map
+
+        Parameters
+        ----------
+        cube: `spectral_cube.spectral_cube.SpectralCube`. optional ,must be keyword
+            data cube to plot map from. if not provided, loads default map for DK
+        ax: `matplotlib.pyplot.axes`, optional, must keyword
+            axis to plot onto, or creates new one
+        region_str: `str`, optional, must be keyword
+            DS9 region string to cut cube to
+        clip_mask: `bool`, optional, must be keyword
+            if True, clips data at clip_value
+        clip_value: `number, astropy.units.quantity`, optional, must be keyword
+            value to clip intensity at, defaults to 10^18 cm^-2
+        use_wcs: `bool`, optional, must be keyword
+            determins whether to use WCS axes or not
+        fit_to_ax: `bool`, optional must be keyword
+            if True, clips cube to fit size of existing axis
+        vel_range: `list-like`, optional, must be keyword:
+            velocity range to integrate cube over, assumes km/s units if not provided
+        colorbar: `bool`, optional, must be keyword
+            if True, adds colorbar
+        colorbar_kwargs: `dict`, optional, must be keyword
+            dictionary of keywords to pass to plotting of colorbar
+        frame: `str`, optional ,must be keyword
+            Coordiante frame to use
+        order: `int`, optional, must be keyword
+            order of moment to plot, default of 0
+        column_density: `bool`, optional, must be keyword
+            if True, converts order 0 to a column density
+        kwargs: passed to ax.imshow
+
+        Returns
+        -------
+        ax: `matplotlib.pyplot.Axes'
+        """
+
+        # Get data cube
+        if cube is None:
+            #load custom_cut_cube
+            cube = os.path.join(self.path, "../HI/hi4pi_LMC_cut.fits")
+
+        if cube.__class__ is str:
+            cube = SpectralCube.read(cube)
+
+
+        # Check for region_str:
+        if region_str is not None:
+            cube = cube.subcube_from_ds9region(region_str)
+        elif (fit_to_ax is True) & (ax is not None):
+            # Frame limitation:
+            if frame is None:
+                frame = "galactic"
+            elif frame != "galactic":
+                raise NotImplementedError("Sorry, only implemented for Galactic Coordiantes so far!")
+            # Currently only works with Galactic Coordiantes
+            if hasattr(ax, "wcs"):
+                xlim_raw = ax.get_xlim()
+                ylim_raw = ax.get_ylim()
+                c_lower_left, c_lower_right, c_upper_left, c_upper_right = ax.wcs.pixel_to_world(
+                                                [xlim_raw[0], 
+                                                 xlim_raw[1], 
+                                                 xlim_raw[0], 
+                                                 xlim_raw[1]], 
+                                                [ylim_raw[0], 
+                                                 ylim_raw[0], 
+                                                 ylim_raw[1], 
+                                                 ylim_raw[1]]
+                    )
+                center = ax.wcs.pixel_to_world(np.median(xlim_raw), np.median(ylim_raw))
+                dx = np.abs(c_lower_right.l.value - c_lower_left.l.value)
+                dy = np.abs(c_lower_left.b.value - c_upper_left.b.value)
+
+                region_str = "galactic; box({}, {}, {}, {})".format(center.l.value, 
+                                                                    center.b.value, 
+                                                                    dx, 
+                                                                    dy)
+
+                cube = cube.subcube_from_ds9region(region_str)
+
+            else:
+                xlim = ax.get_xlim()
+                ylim = ax.get_ylim()
+                center_x, center_y =  np.median(xlim), np.median(ylim)
+                dx = np.abs(np.diff(xlim))[0]
+                dy = np.abs(np.diff(ylim))[0]
+
+                if "extent" not in kwargs:
+                    kwargs["extent"] = [xlim[0], xlim[1], ylim[0], ylim[1]]
+
+                region_str = "galactic; box({}, {}, {}, {})".format(center_x, 
+                                                                    center_y, 
+                                                                    dx, 
+                                                                    dy)
+
+
+                cube = cube.subcube_from_ds9region(region_str)
+
+        # set_velrange
+        if vel_range is None:
+            vel_range = [150,350] * u.km/u.s
+        elif not hasattr(vel_range, "unit"):
+            vel_range *= u.km/u.s
+            logging.warning("No units for vel_range provided, assuming u.km/u.s")
+
+        # Apply spectral cut
+        cube = cube.spectral_slab(vel_range[0], vel_range[1])
+
+
+        # Compute moment
+
+        col_den_factor = 1.823*10**18 * u.cm**-2 / (u.K * u.km/u.s)
+
+        if clip_value is None:
+            clip_value = 1e18* u.cm**-2
+        elif not hasattr(clip_value, "unit"):
+            clip_value *= u.cm**-2
+            logging.warning("No units for clip_value, provided, assuming u.cm^-2")
+
+        if order is None:
+            order = 0
+
+        moment = cube.moment(order = order)
+        if order != 0:
+            zero_moment = cube.moment(order = 0).to(u.K * u.km/u.s)
+            zero_moment *= col_den_factor
+
+        if order == 0:
+            moment = moment.to(u.K * u.km/u.s) * col_den_factor
+            if "cmap" not in kwargs:
+                kwargs["cmap"] = "Greys"
+            if "norm" not in kwargs:
+                if column_density:
+                    kwargs["norm"] = LogNorm(vmin = clip_value.to(u.cm**-2).value, 
+                                             vmax = 1e22)
+                else:
+                    kwargs["norm"] = LogNorm(vmin = 3, vmax = 3000)
+            if column_density:
+                label = r"$N_{HI} (cm^{-2})$"
+            else:
+                label = "HI Intensity (K km / s)"
+        elif order == 1:
+            moment = moment.to(u.km/u.s)
+            if "cmap" not in kwargs:
+                kwargs["cmap"] = "RdBu_r"
+            if "norm" not in kwargs:
+                kwargs["norm"] = Normalize(vmin = vel_range[0].value, vmax = vel_range[1].value)
+            label = "Mean Velocity (km / s)"
+        elif order == 2:
+            moment = moment.to(u.km**2/u.s**2)
+            if "norm" not in kwargs:
+                kwargs["norm"] = Normalize(vmin = 0, vmax = 50**2)
+            label = r"Variance ((km / s)$^{2}$)"
+
+
+        # apply clipping
+        if clip_mask:
+
+            if order != 0:
+                masked_moment = np.ma.masked_array(moment.value, mask = zero_moment < clip_value)
+            else:
+                masked_moment = np.ma.masked_array(moment.value, mask = moment < clip_value)
+
+        else:
+            masked_moment = np.ma.masked_array(moment.value, mask = np.isnan(moment))
+
+
+        # Plot map
+
+        # Check for ax
+        if ax is None:
+            if use_wcs:
+                fig = plt.figure()
+                ax = fig.add_subplot(111, projection = moment.wcs)
+
+            else:
+                fig, ax = plt.subplots()
+
+
+
+
+        if use_wcs:
+            if "transform" not in kwargs:
+                kwargs["transform"] = ax.get_transform(moment.wcs)
+
+            
+            im = ax.imshow(masked_moment, **kwargs)
+        else:
+            if "origin" not in kwargs:
+                kwargs["origin"] = "lower"
+
+            if "extent" not in kwargs:
+                # set extent from map lims
+                raise NotImplementedError("Extent is missing, not yet implemented to auto set for image!")
+
+            im = ax.imshow(masked_moment, **kwargs)
+
+        if colorbar:
+            fig = plt.gcf()
+            if "label" not in colorbar_kwargs:
+                colorbar_kwargs["label"] = label
+            cb = fig.colorbar(im, **colorbar_kwargs)
+
+        return ax
 
 
 

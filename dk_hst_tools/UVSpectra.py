@@ -48,6 +48,7 @@ class UVSpectra(UVSpectraMixin, Table):
                  source_dirs = None, source_names = None, source_info = None, 
                  LMC_info = None, LMC_coords = None, source_coords = None,
                  coords_dict = None, abund_files = None, 
+                 SMC_info = None, SMC_coords = None,
                  raw_df = None, 
                  raw_table = None,
                  **kwargs):
@@ -78,6 +79,11 @@ class UVSpectra(UVSpectraMixin, Table):
                 self.LMC_info = Simbad.query_object("LMC")
             else:
                 self.LMC_info = LMC_info
+
+            if SMC_info is None:
+                self.SMC_info = Simbad.query_object("SMC")
+            else:
+                self.SMC_info = SMC_info
             
 
             # Set SkyCoord objects for sources
@@ -88,6 +94,15 @@ class UVSpectra(UVSpectraMixin, Table):
                     frame = "icrs")
             else:
                 self.LMC_coords = LMC_coords
+
+            if SMC_coords is None:
+                self.SMC_coords = SkyCoord(ra = self.SMC_info["RA"], 
+                    dec = self.SMC_info["DEC"], 
+                    unit = (u.hourangle, u.deg), 
+                    frame = "icrs")
+            else:
+                self.SMC_coords = SMC_coords
+
 
             if source_coords is None:
                 self.source_coords = SkyCoord(ra = self.source_info["RA"], 
@@ -266,7 +281,9 @@ class UVSpectra(UVSpectraMixin, Table):
                                coords_dict = self.coords_dict,
                                abund_files = self.abund_files, 
                                raw_df = self.raw_df, 
-                               raw_table = self.raw_table)
+                               raw_table = self.raw_table, 
+                               SMC_info = self.SMC_info, 
+                               SMC_coords = self.SMC_coords)
         if self.meta:
             table.meta = self.meta.copy()  # Shallow copy for slice
         table.primary_key = self.primary_key
