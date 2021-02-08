@@ -151,6 +151,13 @@ class UVSpectraMixin(object):
         uk: `pykrige.uk.UniversalKriging`
         """
 
+        if ion.__class__ is str:
+            z = self["N_{}".format(ion)].copy()
+        else:
+            z = np.zeros_like(self["N_{}".format(ion[0])])
+            for ion_name in ion:
+                z += self["N_{}".format(ion_name)].copy()
+
         if frame is None:
             frame = 'galactic'
 
@@ -176,13 +183,13 @@ class UVSpectraMixin(object):
             except AttributeError:
                 raise AttributeError("coord_names provided not found!")
 
-        z = self["N_{}".format(ion)]
 
         mask = np.isnan(z)
         mask |= np.isinf(z)
         if mask_limits:
-            mask |= self["N_{}_UPPERLIMIT".format(ion)]
-            mask |= self["N_{}_LOWERLIMIT".format(ion)]
+            for ion_name in ion:
+                mask |= self["N_{}_UPPERLIMIT".format(ion_name)]
+                mask |= self["N_{}_LOWERLIMIT".format(ion_name)]
 
         # keyword defaults
         if "variogram_model" not in kwargs:
@@ -296,8 +303,9 @@ class UVSpectraMixin(object):
 
         Parameters
         ----------
-        ion: `str`
+        ion: `str`, `list-like`
             name of ion to plot column density for
+            can also be list of ions to sum
         ax: `matplotlib.pyplot.axis', optional, must be keyword
             if provided, plots on provided axis, else makes new figure and axis
         log: `bool`, optional, must be keyword
@@ -353,8 +361,12 @@ class UVSpectraMixin(object):
         """
 
         # Make sure ion exists in data
-        if "N_{}".format(ion) not in self.keys():
-            raise ValueError("Specified ion is not in this data!")
+        if ion.__class__ is str:
+            z = self["N_{}".format(ion)].copy()
+        else:
+            z = np.zeros_like(self["N_{}".format(ion[0])])
+            for ion_name in ion:
+                z += self["N_{}".format(ion_name)].copy()
 
         if frame is None:
             frame = "galactic"
@@ -388,7 +400,7 @@ class UVSpectraMixin(object):
             except AttributeError:
                 raise AttributeError("coord_names provided not found!")
 
-        z = self["N_{}".format(ion)].copy()
+
         if log:
             z = np.log10(z)
 
@@ -589,6 +601,76 @@ class UVSpectraMixin(object):
                 return ax, ss_pred
 
         return ax
+
+
+    def plot_impact_parameter_contour(self, 
+                                      ax = None,
+                                      levels = None, 
+                                      keep_axlims = True,
+                                      add_labels = True,
+                                      **kwargs):
+        """
+        Plot contours of impact parameter on map
+
+        Parameters
+        ----------
+        ax: `matplotlib.pyplot.axes`, optional, must keyword
+            axis to plot onto, or creates new one
+        levels: `list-like`, optional, must be keyword
+            contour levels to plot
+        keep_axlims: `bool`, optional, must be keyword
+            if True, keeps existing xlim and ylim values
+        add_labels: `bool`, optional, must be keyword
+            if True, labels contour levels
+
+
+
+        """
+
+        # Check for ax
+        if ax is None:
+            fig, ax = plt.subplots()
+
+        # Check for wcs
+        if hasattr(ax, "wcs"):
+            if "transform" not in kwargs:
+                kwargs["transform"] = ax.get_transform("world")
+
+        if levels is None:
+            levels = [5, 10, 20, 30, 40, 50]
+
+        # Get coordinates:
+        if keep_axlims:
+            xlim = ax.get_xlim()
+            ylim = ax.get_ylim()
+
+        gridx = np.arange(240,340,1.)
+        gridy = np.arange(-85,15,1.)
+
+        xx, yy = np.meshgrid(gridx, gridy, indexing = "ij")
+
+        coords = SkyCoord(l = xx*u.deg, b = yy*u.deg, frame = "galactic")
+        z = self.get_LMC_impact_parameter(coords)
+
+        # plot contours
+
+        ct = ax.contour(xx, yy, z, levels = levels, **kwargs)
+
+        if keep_axlims:
+            xlim = ax.set_xlim(xlim)
+            ylim = ax.set_ylim(ylim)
+
+        if add_labels:
+            fmt = {}
+            for l in ct.levels:
+                fmt[l] = "{} kpc".format(l)
+            ax.clabel(ct, ct.levels, fmt = fmt)
+
+        return ax 
+
+
+
+
 
 
 
@@ -844,8 +926,9 @@ class UVSpectraMixin(object):
         Parameters
         ----------
 
-        ion: `str`
+        ion: `str`, 'listlike'
             name of ion to plot column density for
+            can also be list of ions to sum column densities 
         ax: `matplotlib.pyplot.axis', optional, must be keyword
             if provided, plots on provided axis, else makes new figure and axis
         log: `bool`, optional, must be keyword
@@ -870,9 +953,14 @@ class UVSpectraMixin(object):
         """
 
         # Make sure ion exists in data
-        if "N_{}".format(ion) not in self.keys():
-            raise ValueError("Specified ion is not in this data!")
 
+        if ion.__class__ is str:
+            y = self["N_{}".format(ion)].copy()
+        else:
+            y = np.zeros_like(self["N_{}".format(ion[0])])
+            for ion_name in ion:
+                y += self["N_{}".format(ion_name)].copy()
+        
         if ax is None:
             fig, ax = plt.subplots()
 
@@ -925,7 +1013,6 @@ class UVSpectraMixin(object):
         # Get x and y values to plot
         x = self["LMC_B"].copy()
         xlabel = "LMC Impact Parameter (kpc)"
-        y = self["N_{}".format(ion)].copy()
         ylabel = r"Column Density $(cm^{-2})$"
         if log:
             y = np.log10(y)
