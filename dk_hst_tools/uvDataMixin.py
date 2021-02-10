@@ -187,9 +187,8 @@ class UVSpectraMixin(object):
         mask = np.isnan(z)
         mask |= np.isinf(z)
         if mask_limits:
-            for ion_name in ion:
-                mask |= self["N_{}_UPPERLIMIT".format(ion_name)]
-                mask |= self["N_{}_LOWERLIMIT".format(ion_name)]
+            mask |= self["N_{}_UPPERLIMIT".format(ion)]
+            mask |= self["N_{}_LOWERLIMIT".format(ion)]
 
         # keyword defaults
         if "variogram_model" not in kwargs:
@@ -1109,6 +1108,66 @@ class UVSpectraMixin(object):
             ax.arrow(x, y, 0, dy, head_length = head_length, color = color, **limit_kwargs)
 
         return ax
+
+
+
+
+
+
+
+    # # SBI Related functions
+    # # pytorch
+    # import torch
+    # # sbi
+    # import sbi.utils as utils
+    # from sbi.inference.base import infer
+
+    def exponential_halo_simulator(self, b, n_0, h_r, distance = 50, ):
+        """
+        exponential halo model at constant metallicity
+
+        Parameters
+        ----------
+        b: `torch.tensor`, `list-like`, 
+            impact parameter
+        n_0: `number` - params[0]
+            central density
+        h_r: `number` - params[0]
+            scale radius
+        """
+
+        # pytorch
+        import torch
+        # sbi
+        import sbi.utils as utils
+        from sbi.inference.base import infer
+
+        # n_0, h_r = params
+
+        # angular impact parameter
+        alpha = torch.arctan(b/distance)
+        def r(theta, alpha = alpha, D = distance, b = b):
+            return D * torch.sin(alpha) / (torch.sin(np.pi - torch.abs(theta[:,None]) - torch.arcsin(D/b * torch.sin(alpha))))
+
+        def dens(r):
+            return n_0 * torch.exp(-1/2 * (r / h_r)**2)
+
+        theta_grid = torch.linspace(-np.pi/2, np.pi/2, 1000)
+        r_grid = r(theta_grid)
+        dl_grid = torch.stack([r_grid[ell]**2 + r_grid[ell+2]**2 - 2 * r_grid[ell] * r_grid[ell+2] * 
+            torch.cos(theta_grid[ell+2] - theta_grid[ell]) for ell in range(len(theta_grid)-2)])
+
+        # convert dl_grid to cm
+        dl_grid *= 3.08e18
+    
+
+        rcen_grid = r_grid[1:-1]
+
+        dens_grid = dens(rcen_grid)
+        col_dens_grid = dens_grid * dl_grid
+        return torch.sum(col_dens_grid, axis = 0)
+
+
 
 
 
