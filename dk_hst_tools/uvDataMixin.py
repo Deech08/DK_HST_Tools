@@ -17,6 +17,9 @@ import os
 from spectral_cube import SpectralCube
 
 
+from .sbiKit import sbiKit
+
+
 
 class UVSpectraMixin(object):
     """
@@ -1166,6 +1169,24 @@ class UVSpectraMixin(object):
         dens_grid = dens(rcen_grid)
         col_dens_grid = dens_grid * dl_grid
         return torch.sum(col_dens_grid, axis = 0)
+
+    def setup_SBI(self, ion, mask_limits = True, from_file = None):
+        """
+        setup SBI sbiKit
+
+        Parameters
+        ----------
+        UVSpectra: 
+            local UV spectra class
+        ion: `str`, `list-like`:
+            ion or list of ions to sum
+        mask_limits: `bool`, optional, must be keyword
+            if True, masks upper and lower limits
+        from_file: `str`, optional, must be keyword
+            if provided, loads sbiKit from filename provided
+        """
+
+        return sbiKit(self, ion, mask_limits = mask_limits, from_file = from_file)
 
 
 

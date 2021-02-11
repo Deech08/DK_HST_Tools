@@ -22,7 +22,9 @@ directory = os.path.dirname(__file__)
 cite_these = {
     "pymccorrelation":"https://github.com/privong/pymccorrelation",
     "Kendall's Tau with censoring": "https://ui.adsabs.harvard.edu/abs/1986ApJ...306..490I/abstract",
-    "pyKrige":"DOI:10.5281/zenodo.3991907"
+    "pyKrige":"DOI:10.5281/zenodo.3991907",
+    "sbi_python":"DOI:10.21105/joss.02505",
+    "Simulation Based Inference Review":"https://doi.org/10.1073/pnas.1912789117"
 }
 
 class UVSpectra(UVSpectraMixin, Table):
