@@ -19,6 +19,10 @@ from spectral_cube import SpectralCube
 
 from .sbiKit import sbiKit
 
+from lmfit import Parameters
+
+from VoigtFit.output import rebin_spectrum
+
 
 
 class UVSpectraMixin(object):
@@ -161,6 +165,17 @@ class UVSpectraMixin(object):
             for ion_name in ion:
                 z += self["N_{}".format(ion_name)].copy()
 
+        mask = np.isnan(z)
+        mask |= np.isinf(z)
+        if mask_limits:
+            if ion.__class__ is str:
+                mask |= self["N_{}_UPPERLIMIT".format(ion)]
+                mask |= self["N_{}_LOWERLIMIT".format(ion)]
+            else:
+                for ion_name in ion:
+                    mask |= self["N_{}_UPPERLIMIT".format(ion_name)]
+                    mask |= self["N_{}_LOWERLIMIT".format(ion_name)]
+
         if frame is None:
             frame = 'galactic'
 
@@ -186,12 +201,6 @@ class UVSpectraMixin(object):
             except AttributeError:
                 raise AttributeError("coord_names provided not found!")
 
-
-        mask = np.isnan(z)
-        mask |= np.isinf(z)
-        if mask_limits:
-            mask |= self["N_{}_UPPERLIMIT".format(ion)]
-            mask |= self["N_{}_LOWERLIMIT".format(ion)]
 
         # keyword defaults
         if "variogram_model" not in kwargs:
@@ -1195,20 +1204,342 @@ class UVSpectraMixin(object):
 
 
 
+class UVSpectraRawMixin(object):
+    """
+    Mixin class for raw UV data to go trhough voigt fitting process
+    """
+
+    def firstOfunc(self, x, a, b):
+        """
+        first order polynomial
+        """
+        return a*x + b
+    def secondOfunc(self, x, a, b, c):
+        """
+        second order polynomial
+        """
+        return a*x**2 + b*x + c
+    def thirdOfunc(self, x, a, b, c, d):
+        """
+        third order polynomial
+        """
+        return a*x**3 + b*x**2 + c*x + d
+    def fourthOfunc(self, x, a, b, c, d, e):
+        """
+        fourth order polynomial
+        """
+        return a*x**4 + b*x**3 + c*x**2 + d*x + e
+
+    def plot_all_regions(self, figsize = None, **kwargs):
+        """
+        Plots all spectra from regions of interest
+
+        Parameters
+        ----------
+        kwargs:
+            passed on to ax.plot
+        figsize:
+            figure size to set
+        
+
+        """
+
+        # check kwargs:
+        if "lw" not in kwargs:
+            kwargs["lw"] = 2
+        if "drawstyle" not in kwargs:
+            kwargs["drawstyle"] = "steps-mid"
+        if "alpha" not in kwargs:
+            kwargs["alpha"] = 0.8
+
+        # determine plotting frame
+        if len(self.dataset.regions) % 5 == 0:
+            fig, axs = plt.subplots(int(len(self.dataset.regions)/5),5, figsize = figsize)
+        elif len(self.dataset.regions) % 4 == 0:
+            fig, axs = plt.subplots(int(len(self.dataset.regions)/4),4, figsize = figsize)
+        elif len(self.dataset.regions) % 3 == 0:
+            fig, axs = plt.subplots(int(len(self.dataset.regions)/3),3, figsize = figsize)
+        elif len(self.dataset.regions) % 2 == 0:
+            fig, axs = plt.subplots(int(len(self.dataset.regions)/2),2, figsize = figsize)
+        else:
+            fig, axs = plt.subplots(len(self.dataset.regions),1, figsize = figsize)
+
+        for ell, (region, ax) in enumerate(zip(self.dataset.regions, np.array(axs).flatten())):
+            wl = region.wl
+            spec = region.flux
+            err = region.err
+            wl_r, spec_r, err_r = rebin_spectrum(wl, spec, err, self.rebin_n, method = self.rebin_method)
+            ax.plot(wl_r, spec_r, **kwargs)
+            xlim = ax.get_xlim()
+            ylim = ax.get_ylim()
+
+            if region.label == '':
+                region.generate_label()
+
+            _ = ax.text(xlim[0], ylim[0], 
+                        r"{}: {}".format(ell,region.label),
+                        ha = "left", 
+                        va = "bottom", 
+                        color = 'k')
+
+            if region.normalized:
+                ax.plot(xlim, [1,1], color = "r", lw = 1, alpha = 0.8, zorder = 0, ls = ":")
+
+            xlim = ax.set_xlim(xlim)
+            ylim = ax.set_ylim(ylim)
+
+        return fig
 
 
+    def normalize_region(self, region_ind, 
+                         mask = None, 
+                         left_mask_region = None, 
+                         right_mask_region = None, 
+                         func = None):
+        """
+        Normalize Spectrum with polynomial continuum fit
+        
+        Parameters
+        ----------
+        region_ind: `int`
+            index of region to fit
+        mask: `bool array`, optional, must be keyword
+            if provided, uses this mask to select continuum region
+        left_mask_region: `list`,
+            [left,right] mask region for left side continuum
+        right_mask_region: `list`,
+            [left,right] mask region for right side continuum
+        func: `callable`,
+            Polynomial function to fit - defaults to Linear 1st order
+            
+        Returns
+        -------
+        continuum, continuum_error
+        """
+        from scipy.optimize import curve_fit
+
+        if func == None:
+            func = self.firstOfunc
+
+        region = self.dataset.regions[region_ind]
+        
+        if mask is not None:
+            fit_wl = region.wl[mask]
+            fit_flux = region.flux[mask]
+        
+        else:
+            # set line mask
+            left_mask = region.wl < left_mask_region[1]
+            left_mask &= region.wl > left_mask_region[0]
+
+            right_mask = region.wl < right_mask_region[1]
+            right_mask &= region.wl > right_mask_region[0]
+
+            c_mask = left_mask | right_mask
+
+            fit_wl = region.wl[c_mask]
+            fit_flux = region.flux[c_mask]
+
+        
+        popt, pcov = curve_fit(func, fit_wl, fit_flux)
+        continuum = func(region.wl, *popt)
+        e_continuum = np.std(fit_flux - func(fit_wl, *popt))
+        
+        return continuum, e_continuum / np.median(continuum)
+
+    def normalize_all_regions(self, 
+                              masks = None, 
+                              left_mask_regions = None, 
+                          right_mask_regions = None, 
+                          func = None, 
+                          apply_all = False):
+        """
+        Normalize Spectra with polynomial continuum fit for all regions in dataset
+        
+        Parameters
+        ----------
+        masks: `list`.
+            [mask,mask, ...] list of masks of continuum
+        left_mask_regions: `list`,
+            [[left,right], ...] list of mask region for left side continuum
+        right_mask_regions: `list`,
+            [[left,right], ...] list of mask region for right side continuum
+        func: `callable`,
+            Polynomial function to fit - defaults to Linear 1st order
+        apply_all: `bool`, optional, must be keyword
+            if True, applies all normalizations and sets dataset.normalized = True
+            
+        Returns
+        -------
+        [[continuum, continuum_error]]
+        """
 
 
+            
+        # Check lengths
+        n = len(self.dataset.regions)
+        
+        if masks is None:
+        
+            if (len(left_mask_regions) != n) | (len(right_mask_regions) != n):
+                raise TypeError("Improper number of left or right mask regions provided!")
+
+            output = []
+            for ell, (region, left_mask_region, right_mask_region) in enumerate(zip(self.dataset.regions, 
+                                                                                    left_mask_regions, 
+                                                                                    right_mask_regions)):
+                continuum, cont_err = self.normalize_region(ell, left_mask_region, right_mask_region, func = func)
+                output.append([continuum, cont_err])
+                if apply_all:
+                    self.dataset.regions[ell].flux = region.flux / continuum
+                    self.dataset.regions[ell].err = region.err / continuum
+                    self.dataset.regions[ell].cont_err = cont_err
+                    self.dataset.regions[ell].normalized = True
+
+            return output
+        else:
+            if len(masks) != n:
+                raise TypeError("Improper number of continuum masks provided!")
+            
+            output = []
+            for ell, (region, mask) in enumerate(zip(self.dataset.regions, masks)):
+                continuum, cont_err = self.normalize_region(ell, mask = mask, func = func)
+                output.append([continuum, cont_err])
+                if apply_all:
+                    self.dataset.regions[ell].flux = region.flux / continuum
+                    self.dataset.regions[ell].err = region.err / continuum
+                    self.dataset.regions[ell].cont_err = cont_err
+                    self.dataset.regions[ell].normalized = True
+            
+            return output
+
+    def check_for_inactive_components(self, verbose = False, force_clean = False):
+        """
+        Check that no components for inactive elements are defined
+        
+        Parameters
+        ----------
+        verbose: `bool`
+        force_clean:`bool'
+            if True, removes component for inactive elements
+        """
+        for this_ion in list(self.dataset.components.keys()):
+            lines_for_this_ion = [l.active for l in self.dataset.lines.values() if l.ion == this_ion]
+
+            if np.any(lines_for_this_ion):
+                pass
+            else:
+                if verbose:
+                    warn_msg = "\n [WARNING] - Components defined for inactive element: %s"
+                    print(warn_msg % this_ion)
+
+                if force_clean:
+                    # Remove components for inactive elements
+                    self.dataset.components.pop(this_ion)
+                    if verbose:
+                        print("             The components have been removed.")
+                print("")
 
 
+    def prepare_params(self, apply = True):
+        """
+        Prepare lmfit parameters for fitting process
+         
+        Parameters
+        ----------
+        apply: `bool`
+            if True, sets pars to dataset
+        
+        Returns
+        -------
+        Parameters
+        """
+        
+        pars = Parameters()
+        for ion in self.dataset.components.keys():
+            for n, comp in enumerate(self.dataset.components[ion]):
+                ion = ion.replace('*', 'x')
+                z, b, logN = comp.get_pars()
+                z_name = 'z%i_%s' % (n, ion)
+                b_name = 'b%i_%s' % (n, ion)
+                N_name = 'logN%i_%s' % (n, ion)
 
+                pars.add(z_name, value=np.float64(z), vary=comp.var_z)
+                pars.add(b_name, value=np.float64(b), vary=comp.var_b,
+                              min=0.)
+                pars.add(N_name, value=np.float64(logN), vary=comp.var_N)
+                
+        # Check for links
+        for ion in self.dataset.components.keys():
+            for n, comp in enumerate(self.dataset.components[ion]):
+                ion = ion.replace('*', 'x')
+                z_name = 'z%i_%s' % (n, ion)
+                b_name = 'b%i_%s' % (n, ion)
+                N_name = 'logN%i_%s' % (n, ion)
 
+                if comp.tie_z:
+                    pars[z_name].expr = comp.tie_z
+                if comp.tie_b:
+                    pars[b_name].expr = comp.tie_b
+                if comp.tie_N:
+                    pars[N_name].expr = comp.tie_N
+                    
+        # Setup Chebyshev parameters:
+        if self.dataset.cheb_order >= 0:
+            for reg_num, reg in enumerate(self.dataset.regions):
+                if not reg.has_active_lines():
+                    continue
+                p0 = np.median(reg.flux)
+                var_par = reg.has_active_lines()
+                if np.sum(reg.mask) == 0:
+                    var_par = False
+                for cheb_num in range(self.dataset.cheb_order+1):
+                    if cheb_num == 0:
+                        pars.add('R%i_cheb_p%i' % (reg_num, cheb_num), value=p0, vary=var_par)
+                    else:
+                        pars.add('R%i_cheb_p%i' % (reg_num, cheb_num), value=0.0, vary=var_par)
 
+        if apply:
+            self.dataset.pars = pars
+        return pars
 
+    def set_spectral_mask(self, region_ind, mask = None, left_right = None):
+        """
+        Applies mask to spectral section to avoid fitting
+        
+        Paramters
+        ---------
+        mask: `list like`
+            mask array to avoid fitting to
+        left_right: `list`
+            [left_wl, right_wl] of region to mask
+        """
+        if mask is None:
+            self.dataset.regions[region_ind].mask = ((self.dataset.regions[region_ind].wl < left_right[1]) & 
+                                                     (self.dataset.regions[region_ind].wl > left_right[0]))
+        else:
+            self.dataset.regions[region_ind].mask = mask
+            
+        self.dataset.regions[region_ind].mask = ~self.dataset.regions[region_ind].mask
 
+    def set_all_spectral_masks(self, masks = None, left_rights = None):
+        """
+        Applies all masks to spectral section to avoid fitting
+        
+        Paramters
+        ---------
 
-
-
+        mask: `list like`
+            [mask, mask, ...] array to avoid fitting to
+        left_right: `list`
+            [[left_wl, right_wl],[left_wl, right_wl],...] of region to mask
+        """
+        if masks is None:
+            for region_ind, left_right in enumerate(left_rights):
+                set_spectral_mask(self.dataset.regions[region_ind], left_right = left_right)
+        else:
+            for region_ind, mask in enumerate(masks):
+                set_spectral_mask(self.dataset.regions[region_ind], mask = mask)
 
 
 

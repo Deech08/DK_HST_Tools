@@ -7,7 +7,7 @@ from astropy.coordinates import SkyCoord
 from astropy.table.column import (BaseColumn, Column, MaskedColumn, _auto_names, FalseArray,
                      col_copy, _convert_sequence_data_to_array)
 
-from .uvDataMixin import UVSpectraMixin
+from .uvDataMixin import UVSpectraMixin, UVSpectraRawMixin
 
 import os
 
@@ -16,6 +16,8 @@ import io
 import pandas as pd
 
 from astroquery.simbad import Simbad
+
+import VoigtFit
 
 directory = os.path.dirname(__file__)
 
@@ -319,4 +321,116 @@ class UVSpectra(UVSpectraMixin, Table):
 
     def _cite(self):
         return cite_these
-        
+
+
+
+class UVSpectraRaw(UVSpectraRawMixin, object):
+    """
+    Raw UV data reader and wrapper to go through voigt fitting process
+
+    Parameters
+    ----------
+    filename: `str`, `list-like`
+        filename of spectra text file with columns of wavelength, flux, error
+        if list, can be multiple filenames of data to load in
+    redshift: `number`, optional, must be keyword - defaults to 0
+        redshift
+    name: `str`, optional, must be keyword
+        name to set dataset to, defaults to folder name
+    resolution: `number`, optional, must be keyword
+        spectral resolution in km/s
+    lines: `list-like`, optional, must be keyword
+        list of strings of lines to add to dataset
+    velspan: `number`, optional, must be keyword
+        velocity span for lines, default to 1000
+    rebin_n: `number`, optional, must be keyword
+        number of elements to rebin by
+    rebin_method: `str`, optional, must be keyword
+            rebinning method to use, either "mean" or "median"
+    """
+    
+    def __init__(self, filename, 
+                 redshift = None, 
+                 name = None, 
+                 resolution = None, 
+                 lines = None, 
+                 velspan = None, 
+                 rebin_n = None,
+                 rebin_method = None):
+        if filename.__class__ is str:
+            self.data_files = [filename]
+        else:
+            self.data_files = filename
+        if redshift == None:
+            self.redshift = 0.
+        else:
+            self.redshift = redshift
+
+        if resolution == None:
+            self.resolution = 20. # COS
+
+        if name == None:
+            self.name = self.data_files[0].split("/")[-2]
+        else:
+            self.name = name
+
+        if lines == None:
+            # set default set of lines
+            self.lines = lines = ["CII_1334", 
+                     "CIV_1548", "CIV_1550",
+                     "SiII_1190", "SiII_1193", 
+                     "SiIII_1206", 
+                     "SiIV_1393", "SiIV_1402",
+                     "OI_1302",
+                     "OVI_1031", "OVI_1037",
+                     "NV_1238", "NV_1242",
+                     "SII_1250", "SII_1253", "SII_1259"]
+        else:
+            self.lines = lines
+
+        if velspan == None:
+            self.velspan = 500.
+        else:
+            self.velspan = velspan
+
+        if rebin_n == None:
+            self.rebin_n = 5
+        else:
+            self.rebin_n = rebin_n
+
+        if rebin_method == None:
+            self.rebin_method = "mean"
+        else:
+            self.rebin_method = rebin_method
+
+        # open Dataset
+        self.dataset = VoigtFit.DataSet(self.redshift)
+        self.dataset.set_name(self.name)
+
+
+        # read in data from text file
+        for file in self.data_files:
+            print("Loading data from file, {}".format(file.split("/")[-1]))
+            wav, flux, err, _,_, _,_, _,_ = np.loadtxt(file, unpack = True)
+            mask = flux < 0
+            mask |= np.isnan(flux)
+            mask |= np.isinf(flux)
+            self.dataset.add_data(wav[~mask], flux[~mask], self.resolution, 
+                                  err = err[~mask], 
+                                  normalized = False)
+
+
+        # Add relevent lines to dataset
+        for line in self.lines:
+            self.dataset.add_line(line, velspan = self.velspan)
+
+
+
+
+
+
+
+
+
+
+
