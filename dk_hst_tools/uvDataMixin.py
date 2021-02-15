@@ -2,6 +2,7 @@ import logging
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord, concatenate
+from astropy.constants import c as speed_of_light
 import numpy as np
 
 import matplotlib.pyplot as plt
@@ -1230,7 +1231,7 @@ class UVSpectraRawMixin(object):
         """
         return a*x**4 + b*x**3 + c*x**2 + d*x + e
 
-    def plot_all_regions(self, figsize = None, **kwargs):
+    def plot_all_regions(self, figsize = None, velocity = True, continuum = None, **kwargs):
         """
         Plots all spectra from regions of interest
 
@@ -1240,7 +1241,11 @@ class UVSpectraRawMixin(object):
             passed on to ax.plot
         figsize:
             figure size to set
-        
+        velocity:
+            if True, plots x axis in velocity units
+        continuum: `list`, optional, must be keyword
+            list of continuum fit ouputs for all regions
+            if provided, also plots the fits
 
         """
 
@@ -1264,14 +1269,36 @@ class UVSpectraRawMixin(object):
         else:
             fig, axs = plt.subplots(len(self.dataset.regions),1, figsize = figsize)
 
+        if continuum == None:
+            plot_cont = False
+        else:
+            plot_cont = True
+
         for ell, (region, ax) in enumerate(zip(self.dataset.regions, np.array(axs).flatten())):
             wl = region.wl
             spec = region.flux
             err = region.err
             wl_r, spec_r, err_r = rebin_spectrum(wl, spec, err, self.rebin_n, method = self.rebin_method)
-            ax.plot(wl_r, spec_r, **kwargs)
+
+            if not velocity:
+                xx = wl_r
+                ax.plot(wl_r, spec_r, **kwargs)
+            else:
+                l0_ref, f_ref, _ = region.lines[0].get_properties()
+                l_ref = l0_ref*(self.redshift+1)
+                vel = (wl_r - l_ref) / l_ref * speed_of_light.to(u.km/u.s)
+                ax.plot(vel, spec_r, **kwargs)
+                xx = vel
             xlim = ax.get_xlim()
             ylim = ax.get_ylim()
+
+            if plot_cont:
+                wl_r, spec_r, err_r = rebin_spectrum(region.wl, continuum[ell][0], region.err, 
+                                                     self.rebin_n, method = self.rebin_method)
+                ax.plot(xx, spec_r, color = "orange", alpha = 0.8, lw = 1, ls = "--")
+
+            
+
 
             if region.label == '':
                 region.generate_label()

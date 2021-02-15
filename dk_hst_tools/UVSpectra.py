@@ -3,9 +3,11 @@ import logging
 import numpy as np 
 from astropy import units as u 
 from astropy.table import Table 
-from astropy.coordinates import SkyCoord
+from astropy.coordinates import SkyCoord, LSR
 from astropy.table.column import (BaseColumn, Column, MaskedColumn, _auto_names, FalseArray,
                      col_copy, _convert_sequence_data_to_array)
+
+from astropy.constants import c as speed_of_light
 
 from .uvDataMixin import UVSpectraMixin, UVSpectraRawMixin
 
@@ -361,10 +363,7 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             self.data_files = [filename]
         else:
             self.data_files = filename
-        if redshift == None:
-            self.redshift = 0.
-        else:
-            self.redshift = redshift
+        
 
         if resolution == None:
             self.resolution = 20. # COS
@@ -381,10 +380,10 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                      "SiII_1190", "SiII_1193", 
                      "SiIII_1206", 
                      "SiIV_1393", "SiIV_1402",
-                     "OI_1302",
-                     "OVI_1031", "OVI_1037",
+                     # "OI_1302",
+                     # "OVI_1031", "OVI_1037",
                      "NV_1238", "NV_1242",
-                     "SII_1250", "SII_1253", "SII_1259"]
+                     "SII_1250", "SII_1253"]#, "SII_1259"]
         else:
             self.lines = lines
 
@@ -402,6 +401,29 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             self.rebin_method = "mean"
         else:
             self.rebin_method = rebin_method
+
+        customSimbad = Simbad()
+        customSimbad.add_votable_fields("rvz_radvel", "rvz_type")
+
+        self.source_info = customSimbad.query_object(self.name)
+
+        self.SkyCoord_at_LMC = SkyCoord(ra = self.source_info["RA"][0], 
+                    dec = self.source_info["DEC"][0], 
+                    distance = 50*u.kpc,
+                    pm_ra_cosdec = 0*u.mas/u.s,
+                    pm_dec = 0*u.mas/u.s,
+                    radial_velocity = 0*u.km/u.s,
+                    unit = (u.hourangle, u.deg), 
+                    frame = "icrs")
+
+
+        self.redshift_from_rv =self.SkyCoord_at_LMC.transform_to(LSR()).radial_velocity/speed_of_light
+        self.redshift_from_rv = -1*self.redshift_from_rv.decompose().value
+
+        if redshift == None:
+            self.redshift = self.redshift_from_rv
+        else:
+            self.redshift = redshift
 
         # open Dataset
         self.dataset = VoigtFit.DataSet(self.redshift)
