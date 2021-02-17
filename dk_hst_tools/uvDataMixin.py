@@ -22,7 +22,7 @@ from .sbiKit import sbiKit
 
 from lmfit import Parameters
 
-from VoigtFit.output import rebin_spectrum
+from VoigtFit.output import rebin_spectrum, rebin_bool_array
 
 
 
@@ -1198,6 +1198,116 @@ class UVSpectraMixin(object):
 
         return sbiKit(self, ion, mask_limits = mask_limits, from_file = from_file)
 
+    def get_profile(self, ion_wav, pars, wl_arr = None, vel_arr = None, 
+                    resolution = None, redshift = None, **kwargs):
+        """
+        Get absorption line profile for specified ion_wavelength
+
+        Parameters
+        ----------
+        ion_wav: `str`
+            ion_wavelength to get profile for
+        pars: `dict`
+            parameters for line profile
+            must include "v", "b", and "logN"
+        resolution: `number`, optional, must be keyword
+            instrument resolution for convolution in km/s
+            defualt to 20 km/s
+        redshift: `number`, optional, must be keyword
+            system redshift, default to 0
+        wl_arr: `list-like`, optional, must be keyword
+            array of wavelengths to compute spectrum to
+        vel_arr: `list_like`, optional, must be keyword
+            array of velocities to compute spectrum to
+        """
+        from VoigtFit.lines import show_transitions
+        from VoigtFit.voigt import Voigt, convolve_numba
+        from scipy.signal import fftconvolve, gaussian
+
+        # find the right transition
+        atomic_data = show_transitions(ion = ion_wav.split("_")[0])
+        names = [at[0] for at in atomic_data]
+        match = np.array(names) == ion_wav
+
+        _, _, l0, f, gam, _ = np.array(atomic_data)[match][0]
+
+        # check for resolution
+        if resolution == None:
+            resolution = 20. #km/s for COS
+
+        # check redshift
+        if redshift == None:
+            redshift = 0.
+
+        v = pars["v"]
+        b = pars["b"]
+        logN = pars["logN"]
+
+        if ((type(v) == float) | (type(v) == np.float64)):
+            v = list([v])
+            b = list([b])
+            logN = list([logN])
+
+        l_center = l0 * (redshift + 1.)
+
+        # find wl_line
+        if vel_arr == None:
+            if wl_arr == None:
+                # use default wavelength range of +-500 km/s
+                wl_arr = np.arange(l_center - .01*250, l_center +0.01*250, 0.01)
+
+            vel_arr = (wl_arr - l_center)/l_center*(speed_of_light.to(u.km/u.s).value)
+
+        elif wl_arr == None:
+            wl_arr = (vel_arr / (speed_of_light.to(u.km/u.s).value) * l_center) + l_center
+
+        tau = np.zeros_like(vel_arr)
+
+        for (vv, bb, NN) in zip(v, b, logN):
+            tau += Voigt(wl_arr, l0, f, 10**NN, 1.e5*bb, gam, z = vv/(speed_of_light.to(u.km/u.s).value))
+
+
+        # Compute profile
+        profile_int = np.exp(-tau)
+
+        # convolve with instrument profile
+        if isinstance(resolution, float):
+            pxs = np.diff(wl_arr)[0] / wl_arr[0] * (speed_of_light.to(u.km/u.s).value)
+            sigma_instrumental = resolution / 2.35482 / pxs
+            LSF = gaussian(len(wl_arr) // 2, sigma_instrumental)
+            LSF = LSF/LSF.sum()
+            profile = fftconvolve(profile_int, LSF, 'same')
+        else:
+            profile = voigt.convolve_numba(profile_int, resolution)
+
+
+
+        out = {
+            "wl":wl_arr,
+            "vel":vel_arr,
+            "spec":profile
+        }
+
+        return out
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
+
+
+
 
 
 
@@ -1231,6 +1341,376 @@ class UVSpectraRawMixin(object):
         """
         return a*x**4 + b*x**3 + c*x**2 + d*x + e
 
+    def fifthOfunc(self, x, a, b, c, d, e, f):
+        """
+        fourth order polynomial
+        """
+        return a*x**5 + b*x**4 + c*x**3 + d*x**2 + e*x + f
+
+    def sixthOfunc(self, x, a, b, c, d, e, f, g):
+        """
+        fourth order polynomial
+        """
+        return a*x**6 + b*x**5 + c*x**4 + d*x**3 + e*x**2 + f*x + g
+
+    def get_profile(self, ion_wav, pars, wl_arr = None, vel_arr = None, 
+                    resolution = None, redshift = None, **kwargs):
+        """
+        Get absorption line profile for specified ion_wavelength
+
+        Parameters
+        ----------
+        ion_wav: `str`
+            ion_wavelength to get profile for
+        pars: `dict`
+            parameters for line profile
+            must include "v", "b", and "logN"
+        resolution: `number`, optional, must be keyword
+            instrument resolution for convolution in km/s
+            defualt to 20 km/s
+        redshift: `number`, optional, must be keyword
+            system redshift, default to 0
+        wl_arr: `list-like`, optional, must be keyword
+            array of wavelengths to compute spectrum to
+        vel_arr: `list_like`, optional, must be keyword
+            array of velocities to compute spectrum to
+        """
+        from VoigtFit.lines import show_transitions
+        from VoigtFit.voigt import Voigt, convolve_numba
+        from scipy.signal import fftconvolve, gaussian
+
+        # find the right transition
+        atomic_data = show_transitions(ion = ion_wav.split("_")[0])
+        names = [at[0] for at in atomic_data]
+        match = np.array(names) == ion_wav
+
+        _, _, l0, f, gam, _ = np.array(atomic_data)[match][0]
+
+        # check for resolution
+        if resolution == None:
+            resolution = 20. #km/s for COS
+
+        # check redshift
+        if redshift == None:
+            redshift = self.redshift
+
+        v = pars["v"]
+        b = pars["b"]
+        logN = pars["logN"]
+
+        if ((type(v) == float) | (type(v) == np.float64)):
+            v = list([v])
+            b = list([b])
+            logN = list([logN])
+
+        l_center = l0 * (redshift + 1.)
+
+        # find wl_line
+        if np.any(vel_arr) == None:
+            if np.any(wl_arr) == None:
+                # use default wavelength range of +-500 km/s
+                wl_arr = np.arange(l_center - .01*250, l_center +0.01*250, 0.01)
+
+            vel_arr = (wl_arr - l_center)/l_center*(speed_of_light.to(u.km/u.s).value)
+
+        elif np.any(wl_arr) == None:
+            wl_arr = (vel_arr / (speed_of_light.to(u.km/u.s).value) * l_center) + l_center
+
+        tau = np.zeros_like(vel_arr)
+
+        for (vv, bb, NN) in zip(v, b, logN):
+            tau += Voigt(wl_arr, l0, f, 10**NN, 1.e5*bb, gam, z = vv/(speed_of_light.to(u.km/u.s).value))
+
+
+        # Compute profile
+        profile_int = np.exp(-tau)
+
+        # convolve with instrument profile
+        if isinstance(resolution, float):
+            pxs = np.diff(wl_arr)[0] / wl_arr[0] * (speed_of_light.to(u.km/u.s).value)
+            sigma_instrumental = resolution / 2.35482 / pxs
+            LSF = gaussian(len(wl_arr) // 2, sigma_instrumental)
+            LSF = LSF/LSF.sum()
+            profile = fftconvolve(profile_int, LSF, 'same')
+        else:
+            profile = voigt.convolve_numba(profile_int, resolution)
+
+
+
+        out = {
+            "wl":wl_arr,
+            "vel":vel_arr,
+            "spec":profile
+        }
+
+        return out
+
+    def plot_region_fit(self, region_ind, sub_region_ind = None, vel_range = None,
+                        ax = None, ax_resid = None, figsize = None, labelx = True, 
+                        labely = True, fit_kwargs = {}, 
+                        **kwargs):
+        """
+        method to plot a single region fit
+
+        Parameters
+        ----------
+        region_ind: `int`
+            index of region to plot
+        sub_region_ind: `int`, optional, must be keyword
+            if region has multiple transitions, specifies which index to plot
+        vel_range: `list`, optional, must be keyword
+            velocity range to plot, defaults ot +/- 500 km/s
+        ax: `matplotlib.pyplot.axes`, optional, must be keyword
+            axis to plot onto
+        ax_resid: `matplotlib.pyplot.axes`, optional, must be keyword
+            residual axis to plot onto, if provided
+        figsize: `tuple`, optional, must be keyword
+            sets figure size if ax not specified
+        labelx: `bool`
+            if True, labels x axis
+        labely: `bool`
+            if True, labels y axis
+        fit_kwargs: `dict`
+            keywords for fit profile plotting
+
+        """
+
+        if ax is None:
+            fig = plt.figure(figsize = figsize)
+            gs = plt.GridSpec(8,8)
+
+            ax = fig.add_subplot(gs[1:,:])
+            ax_resid = fig.add_subplot(gs[0,:], sharex = ax)
+
+        # Get ion info:
+        lines = self.dataset.regions[region_ind].lines
+
+        n_lines = len(lines)
+        if n_lines > 1:
+            if sub_region_ind == None:
+                self._plot_region_fit_sub_ind = 1
+                sub_region_ind = 0
+            elif (sub_region_ind < (n_lines - 1)):
+                self._plot_region_fit_sub_ind = sub_region_ind + 1
+            else:
+                self._plot_region_fit_sub_ind = None
+        else:
+            sub_region_ind = 0
+
+        line = lines[sub_region_ind]
+
+        ion = line.ion
+        tag = line.tag
+
+        # get params
+        try:
+            pars = self.dataset.best_fit
+        except AttributeError:
+            pars = self.dataset.pars
+
+        # extract relevant params
+        n_comp = len(self.dataset.components[ion])
+
+        ion_pars = {"v":[], "b":[], "logN":[]}
+        for ell in range(n_comp):
+            ion_pars["v"].append(pars["z{}_{}".format(ell, ion)].value * speed_of_light.to(u.km/u.s).value)
+            ion_pars["b"].append(pars["b{}_{}".format(ell, ion)].value)
+            ion_pars["logN"].append(pars["logN{}_{}".format(ell, ion)].value)
+
+
+        # Get data
+        wl, spec, err, spectra_mask_o = self.dataset.regions[region_ind].unpack()
+        wl_r, spec_r, err_r = rebin_spectrum(wl, spec, err, self.rebin_n, method = self.rebin_method)
+        spectra_mask = rebin_bool_array(spectra_mask_o, self.rebin_n)
+
+        mask_idx = np.where(spectra_mask == 0)[0]
+        mask_idxp1 = mask_idx+1
+        mask_idxn1 = mask_idx-1
+        big_mask_idx = np.union1d(mask_idxp1[mask_idxp1<(len(spectra_mask)-1)], mask_idxn1[mask_idxn1>0])
+        big_mask = np.ones_like(spectra_mask, dtype=bool)
+        big_mask[big_mask_idx] = False
+
+        l0_ref, f_ref, _ = line.get_properties()
+        l_ref = l0_ref*(self.redshift+1)
+        vel = (wl - l_ref) / l_ref * speed_of_light.to(u.km/u.s).value
+        vel_r = (wl_r - l_ref) / l_ref * speed_of_light.to(u.km/u.s).value
+
+        profile = self.get_profile(tag, ion_pars, vel_arr = vel)
+        profile_r = self.get_profile(tag, ion_pars, vel_arr = vel_r)
+
+        resid = profile_r["spec"] - spec_r
+        cont_err = self.dataset.regions[region_ind].cont_err
+
+
+        # plot spectra
+        # Check kwargs
+        if "lw" not in kwargs:
+            kwargs["lw"] = 2
+        if "alpha" not in kwargs:
+            kwargs["alpha"] = 0.8
+        if "drawstyle" not in kwargs:
+            kwargs["drawstyle"] = "steps-mid"
+        if "color" not in kwargs:
+            kwargs["color"] = "k"
+
+        if "lw" not in fit_kwargs:
+            fit_kwargs["lw"] = kwargs["lw"]
+        if "alpha" not in fit_kwargs:
+            fit_kwargs["alpha"] = kwargs["alpha"]
+        if "drawstyle" not in fit_kwargs:
+            fit_kwargs["drawstyle"] = kwargs["drawstyle"]
+        if "color" not in fit_kwargs:
+            fit_kwargs["color"] = "r"
+
+        masked_kwargs = kwargs.copy()
+        masked_kwargs["alpha"] *= 0.25
+
+
+
+        # plot masked region
+        _ = ax.plot(np.ma.masked_where(big_mask, vel_r), 
+                    np.ma.masked_where(big_mask, spec_r), 
+                    **masked_kwargs)
+
+        _ = ax_resid.plot(np.ma.masked_where(big_mask, vel_r), 
+                          np.ma.masked_where(big_mask, resid), 
+                          **masked_kwargs)
+
+        # plot main region
+        _ = ax.plot(np.ma.masked_where(~spectra_mask, vel_r), 
+                    np.ma.masked_where(~spectra_mask, spec_r),
+                    **kwargs)
+
+        _ = ax_resid.plot(np.ma.masked_where(~spectra_mask, vel_r), 
+                          np.ma.masked_where(~spectra_mask, resid), 
+                          **kwargs)
+
+
+        if vel_range is None:
+            vel_range = ax.get_xlim()
+        
+        # plot continuum marker
+        _ = ax.axhline(1., ls = "--", lw = 1, color = "k", zorder = -2, alpha = 0.7)
+        _ = ax_resid.axhline(0., ls = "--", lw = 1, color = "k", zorder = -2, alpha = 0.7)
+
+        # plot continuum error range
+        _ = ax.axhline(1+cont_err, ls=":", lw = 1, color = "k", alpha = 0.5, zorder = -2)
+        _ = ax.axhline(1-cont_err, ls=":", lw = 1, color = "k", alpha = 0.5, zorder = -2)
+
+        # plot resid error range
+        _ = ax_resid.fill_between(vel_r, 3*err_r, -3*err_r, color = fit_kwargs["color"], alpha = 0.1)
+
+        # plot fit
+        _ = ax.plot(profile["vel"], profile["spec"], **fit_kwargs)
+
+        # lims
+        xlim = ax.set_xlim(vel_range)
+        ylim = ax.get_ylim()
+
+        # add label
+        _ = ax.text(xlim[0]+np.abs(np.diff(xlim)*.05), ylim[0]+np.abs(np.diff(ylim)*0.05), 
+                    r"{} $\lambda${}".format(tag.split("_")[0], tag.split("_")[1]), 
+                    fontsize = 12, 
+                    ha = "left", 
+                    va = "bottom")
+
+        # axis labels
+        if labelx:
+            _ = ax.set_xlabel("LSR Velocity (km/s)", fontsize = 12)
+        if labely:
+            _ = ax.set_ylabel("Normalized Flux", fontsize = 12)
+
+
+        return fig
+
+
+
+
+
+    def plot_all_region_fits(self, fig = None, n_cols = None, 
+                             figsize = None, vel_range = None,
+                             ratio = None, 
+                             fit_kwargs = {}, **kwargs):
+        """
+        method to plot all region fit
+
+        Parameters
+        ----------
+        fig: `matplotlib.pyplot.figure`, optional, must be keyword
+            Figure to use
+        n_cols: `int`, optional, must be keyword 
+            number of columns to create
+        vel_range: `list`, optional, must be keyword
+            velocity range to plot, defaults ot +/- 500 km/s
+        figsize: `tuple`, optional, must be keyword
+            sets figure size if ax not specified
+        ratio: `int`, optional, must be keyword
+            sets scaling of main plot to residiual plot, default to 5
+        fit_kwargs: `dict`
+            keywords for fit profile plotting
+
+        """
+        # check for figure
+        if fig == None:
+            fig = plt.figure(figsize = figsize)
+
+        
+        if ratio == None:
+            ratio = 5
+        gs_frame = ratio
+
+        # determine number of plots needed to create
+        all_lines = np.concatenate([region.lines for region in self.dataset.regions])
+        n_lines = len(all_lines)
+
+        if n_cols == None:
+            n_cols = 1
+
+        n_rows = np.ceil(n_lines/n_cols)
+
+        gs_size = int(gs_frame * n_rows + n_rows - 1)
+        gs = plt.GridSpec(gs_size,n_cols)
+
+        # make all axes:
+        axs = []
+        ax_resids = []
+        row_counter = 0
+        start_counter = 0
+        col_counter = 0
+        for ell in range(n_lines):
+            axs.append(fig.add_subplot(gs[start_counter+1:start_counter+gs_frame,col_counter]))
+            ax_resids.append(fig.add_subplot(gs[start_counter,col_counter], sharex = axs[ell]))
+
+            # add ylabel if necessary
+            if col_counter == 0:
+                _ = axs[ell].set_ylabel("Normalized Flux")
+
+            if row_counter == n_rows-1:
+                _ = axs[ell].set_xlabel("LSR Velocity (km/s)")
+            row_counter += 1
+            if row_counter == n_rows:
+                start_counter = 0
+                col_counter += 1
+            else:
+                start_counter += gs_frame+1
+
+        axs[-1].set_xlabel("LSR Velocity (km/s)")
+        return fig
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     def plot_all_regions(self, figsize = None, velocity = True, continuum = None, **kwargs):
         """
         Plots all spectra from regions of interest
@@ -1257,17 +1737,18 @@ class UVSpectraRawMixin(object):
         if "alpha" not in kwargs:
             kwargs["alpha"] = 0.8
 
-        # determine plotting frame
-        if len(self.dataset.regions) % 5 == 0:
-            fig, axs = plt.subplots(int(len(self.dataset.regions)/5),5, figsize = figsize)
-        elif len(self.dataset.regions) % 4 == 0:
-            fig, axs = plt.subplots(int(len(self.dataset.regions)/4),4, figsize = figsize)
-        elif len(self.dataset.regions) % 3 == 0:
-            fig, axs = plt.subplots(int(len(self.dataset.regions)/3),3, figsize = figsize)
-        elif len(self.dataset.regions) % 2 == 0:
-            fig, axs = plt.subplots(int(len(self.dataset.regions)/2),2, figsize = figsize)
-        else:
-            fig, axs = plt.subplots(len(self.dataset.regions),1, figsize = figsize)
+        # # determine plotting frame
+        # if len(self.dataset.regions) % 5 == 0:
+        #     fig, axs = plt.subplots(int(len(self.dataset.regions)/5),5, figsize = figsize)
+        # elif len(self.dataset.regions) % 4 == 0:
+        #     fig, axs = plt.subplots(int(len(self.dataset.regions)/4),4, figsize = figsize)
+        # elif len(self.dataset.regions) % 3 == 0:
+        #     fig, axs = plt.subplots(int(len(self.dataset.regions)/3),3, figsize = figsize)
+        # elif len(self.dataset.regions) % 2 == 0:
+        #     fig, axs = plt.subplots(int(len(self.dataset.regions)/2),2, figsize = figsize)
+        # else:
+        #     fig, axs = plt.subplots(len(self.dataset.regions),1, figsize = figsize)
+        fig,axs = plt.subplots(len(self.dataset.regions),1, figsize = figsize)
 
         if continuum == None:
             plot_cont = False
@@ -1563,10 +2044,12 @@ class UVSpectraRawMixin(object):
         """
         if masks is None:
             for region_ind, left_right in enumerate(left_rights):
-                set_spectral_mask(self.dataset.regions[region_ind], left_right = left_right)
+                self.set_spectral_mask(region_ind, left_right = left_right)
         else:
             for region_ind, mask in enumerate(masks):
-                set_spectral_mask(self.dataset.regions[region_ind], mask = mask)
+                self.set_spectral_mask(region_ind, mask = mask)
+
+
 
 
 

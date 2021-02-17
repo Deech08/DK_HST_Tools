@@ -377,13 +377,13 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             # set default set of lines
             self.lines = lines = ["CII_1334", 
                      "CIV_1548", "CIV_1550",
-                     "SiII_1190", "SiII_1193", 
+                     "SiII_1190", "SiII_1193", "SiII_1260", 
                      "SiIII_1206", 
-                     "SiIV_1393", "SiIV_1402",
+                     "SiIV_1393", "SiIV_1402",]
                      # "OI_1302",
                      # "OVI_1031", "OVI_1037",
-                     "NV_1238", "NV_1242",
-                     "SII_1250", "SII_1253"]#, "SII_1259"]
+                     # "NV_1238", "NV_1242",
+                     # "SII_1250", "SII_1253"]#, "SII_1259"]
         else:
             self.lines = lines
 
