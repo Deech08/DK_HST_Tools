@@ -1447,7 +1447,7 @@ class UVSpectraRawMixin(object):
 
     def plot_region_fit(self, region_ind, sub_region_ind = None, vel_range = None,
                         ax = None, ax_resid = None, figsize = None, labelx = True, 
-                        labely = True, fit_kwargs = {}, 
+                        labely = True, comp_scale = None, fit_kwargs = {}, comp_kwargs = {},
                         **kwargs):
         """
         method to plot a single region fit
@@ -1470,8 +1470,12 @@ class UVSpectraRawMixin(object):
             if True, labels x axis
         labely: `bool`
             if True, labels y axis
+        comp_scale, 'number', optional, must be keyword
+            size to make component marker relative to continuum error, default to 1
         fit_kwargs: `dict`
             keywords for fit profile plotting
+        comp_kwargs: `dict`
+            keywords for vlines marker component velocities
 
         """
 
@@ -1547,7 +1551,7 @@ class UVSpectraRawMixin(object):
         if "lw" not in kwargs:
             kwargs["lw"] = 2
         if "alpha" not in kwargs:
-            kwargs["alpha"] = 0.8
+            kwargs["alpha"] = 0.7
         if "drawstyle" not in kwargs:
             kwargs["drawstyle"] = "steps-mid"
         if "color" not in kwargs:
@@ -1587,7 +1591,8 @@ class UVSpectraRawMixin(object):
 
 
         if vel_range is None:
-            vel_range = ax.get_xlim()
+            vel_range = ax.set_xlim(-450, 450)
+
         
         # plot continuum marker
         _ = ax.axhline(1., ls = "--", lw = 1, color = "k", zorder = -2, alpha = 0.7)
@@ -1620,8 +1625,24 @@ class UVSpectraRawMixin(object):
         if labely:
             _ = ax.set_ylabel("Normalized Flux", fontsize = 12)
 
+        # set resid ylim
+        _ = ax_resid.set_ylim(np.nanmin(-7*err_r), np.nanmax(7*err_r))
 
-        return fig
+        # mark components
+        if comp_scale == None:
+            comp_scale = 1.
+        for vel in ion_pars["v"]:
+            if "alpha" not in comp_kwargs:
+                comp_kwargs["alpha"] = kwargs["alpha"]
+            if "color" not in comp_kwargs:
+                comp_kwargs["color"] = "b"
+            if "lw" not in comp_kwargs:
+                comp_kwargs["lw"] = 2
+            _ = ax.plot([vel, vel], [1 - comp_scale * cont_err, 1 + comp_scale * cont_err], 
+                **comp_kwargs)
+
+
+        return plt.gcf()
 
 
 
@@ -1629,7 +1650,7 @@ class UVSpectraRawMixin(object):
 
     def plot_all_region_fits(self, fig = None, n_cols = None, 
                              figsize = None, vel_range = None,
-                             ratio = None, 
+                             ratio = None, ylim_lock = None,
                              fit_kwargs = {}, **kwargs):
         """
         method to plot all region fit
@@ -1646,6 +1667,8 @@ class UVSpectraRawMixin(object):
             sets figure size if ax not specified
         ratio: `int`, optional, must be keyword
             sets scaling of main plot to residiual plot, default to 5
+        ylim_lock: `list`, optional, must be keyword
+            if provided, sets all ylims to match provided values
         fit_kwargs: `dict`
             keywords for fit profile plotting
 
@@ -1669,7 +1692,9 @@ class UVSpectraRawMixin(object):
         n_rows = np.ceil(n_lines/n_cols)
 
         gs_size = int(gs_frame * n_rows + n_rows - 1)
-        gs = plt.GridSpec(gs_size,n_cols)
+        gs = plt.GridSpec(gs_size,n_cols, hspace=0.)
+
+        
 
         # make all axes:
         axs = []
@@ -1678,8 +1703,20 @@ class UVSpectraRawMixin(object):
         start_counter = 0
         col_counter = 0
         for ell in range(n_lines):
-            axs.append(fig.add_subplot(gs[start_counter+1:start_counter+gs_frame,col_counter]))
+            if np.any(ylim_lock) != None:
+                if ell == 0:
+                    axs.append(fig.add_subplot(gs[start_counter+1:start_counter+gs_frame,col_counter]))
+                    ylim = axs[0].set_ylim(ylim_lock)
+                else:
+                    axs.append(fig.add_subplot(gs[start_counter+1:start_counter+gs_frame,col_counter], 
+                                               sharey = axs[0]))
+            else:
+                axs.append(fig.add_subplot(gs[start_counter+1:start_counter+gs_frame,col_counter]))
             ax_resids.append(fig.add_subplot(gs[start_counter,col_counter], sharex = axs[ell]))
+            ax_resids[ell].axes.get_yaxis().set_visible(False)
+            ax_resids[ell].axes.get_xaxis().set_visible(False)
+
+
 
             # add ylabel if necessary
             if col_counter == 0:
@@ -1695,6 +1732,33 @@ class UVSpectraRawMixin(object):
                 start_counter += gs_frame+1
 
         axs[-1].set_xlabel("LSR Velocity (km/s)")
+
+        self._plot_region_fit_sub_ind = None
+        plot_counter = 0
+        for ell, region in enumerate(self.dataset.regions):
+            # plot each spec
+
+            _ = self.plot_region_fit(ell, 
+                                     sub_region_ind = self._plot_region_fit_sub_ind, 
+                                     ax = axs[plot_counter], 
+                                     ax_resid = ax_resids[plot_counter], 
+                                     labelx = False, 
+                                     labely = False, 
+                                     **kwargs)
+            plot_counter += 1
+
+            while self._plot_region_fit_sub_ind != None:
+                _ = self.plot_region_fit(ell, 
+                                         sub_region_ind = self._plot_region_fit_sub_ind, 
+                                         ax = axs[plot_counter], 
+                                         ax_resid = ax_resids[plot_counter], 
+                                         labelx = False, 
+                                         labely = False, 
+                                         **kwargs)
+                plot_counter += 1
+
+
+
         return fig
 
 
