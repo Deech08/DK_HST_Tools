@@ -1448,6 +1448,7 @@ class UVSpectraRawMixin(object):
     def plot_region_fit(self, region_ind, sub_region_ind = None, vel_range = None,
                         ax = None, ax_resid = None, figsize = None, labelx = True, 
                         labely = True, comp_scale = None, fit_kwargs = {}, comp_kwargs = {},
+                        plot_indiv_comps = False, use_flags = None,
                         **kwargs):
         """
         method to plot a single region fit
@@ -1576,34 +1577,41 @@ class UVSpectraRawMixin(object):
                     np.ma.masked_where(big_mask, spec_r), 
                     **masked_kwargs)
 
-        _ = ax_resid.plot(np.ma.masked_where(big_mask, vel_r), 
-                          np.ma.masked_where(big_mask, resid), 
-                          **masked_kwargs)
+        if ax_resid != None:
+
+            _ = ax_resid.plot(np.ma.masked_where(big_mask, vel_r), 
+                              np.ma.masked_where(big_mask, resid), 
+                              **masked_kwargs)
 
         # plot main region
         _ = ax.plot(np.ma.masked_where(~spectra_mask, vel_r), 
                     np.ma.masked_where(~spectra_mask, spec_r),
                     **kwargs)
 
-        _ = ax_resid.plot(np.ma.masked_where(~spectra_mask, vel_r), 
+        if ax_resid != None:
+            _ = ax_resid.plot(np.ma.masked_where(~spectra_mask, vel_r), 
                           np.ma.masked_where(~spectra_mask, resid), 
                           **kwargs)
 
 
         if vel_range is None:
             vel_range = ax.set_xlim(-450, 450)
+        else:
+            vel_range = ax.set_xlim(vel_range)
 
         
         # plot continuum marker
         _ = ax.axhline(1., ls = "--", lw = 1, color = "k", zorder = -2, alpha = 0.7)
-        _ = ax_resid.axhline(0., ls = "--", lw = 1, color = "k", zorder = -2, alpha = 0.7)
+        if ax_resid != None:
+            _ = ax_resid.axhline(0., ls = "--", lw = 1, color = "k", zorder = -2, alpha = 0.7)
 
         # plot continuum error range
         _ = ax.axhline(1+cont_err, ls=":", lw = 1, color = "k", alpha = 0.5, zorder = -2)
         _ = ax.axhline(1-cont_err, ls=":", lw = 1, color = "k", alpha = 0.5, zorder = -2)
 
         # plot resid error range
-        _ = ax_resid.fill_between(vel_r, 3*err_r, -3*err_r, color = fit_kwargs["color"], alpha = 0.1)
+        if ax_resid != None:
+            _ = ax_resid.fill_between(vel_r, 3*err_r, -3*err_r, color = fit_kwargs["color"], alpha = 0.1)
 
         # plot fit
         _ = ax.plot(profile["vel"], profile["spec"], **fit_kwargs)
@@ -1626,20 +1634,87 @@ class UVSpectraRawMixin(object):
             _ = ax.set_ylabel("Normalized Flux", fontsize = 12)
 
         # set resid ylim
-        _ = ax_resid.set_ylim(np.nanmin(-7*err_r), np.nanmax(7*err_r))
+        if ax_resid != None:
+            _ = ax_resid.set_ylim(np.nanmin(-7*err_r), np.nanmax(7*err_r))
 
         # mark components
         if comp_scale == None:
             comp_scale = 1.
         for vel in ion_pars["v"]:
+            vel_shifted = vel - self.redshift * speed_of_light.to(u.km/u.s).value
             if "alpha" not in comp_kwargs:
                 comp_kwargs["alpha"] = kwargs["alpha"]
             if "color" not in comp_kwargs:
                 comp_kwargs["color"] = "b"
             if "lw" not in comp_kwargs:
                 comp_kwargs["lw"] = 2
-            _ = ax.plot([vel, vel], [1 - comp_scale * cont_err, 1 + comp_scale * cont_err], 
+            _ = ax.plot([vel_shifted, vel_shifted], [1 - comp_scale * cont_err, 1 + comp_scale * cont_err], 
                 **comp_kwargs)
+
+        if plot_indiv_comps:
+
+            if use_flags != None:
+                color_dict = {
+                    "U":"orange",
+                    "MC":"blue",
+                    "MW":"magenta"
+                }
+                width_dict = {
+                    "U":2,
+                    "MC":3,
+                }
+                alpha_dict = {
+                    "MC":1,
+                    "U":0.8,
+                }
+                line_dict = {
+                    "BB":"--"
+                }
+            else:
+                color_dict = None
+                line_dict = None
+                width_dict = None
+
+
+            for ell in range(n_comp):
+                ion_pars = {"v":[], "b":[], "logN":[]}
+                ion_pars["v"].append(pars["z{}_{}".format(ell, ion)].value * speed_of_light.to(u.km/u.s).value)
+                ion_pars["b"].append(pars["b{}_{}".format(ell, ion)].value)
+                ion_pars["logN"].append(pars["logN{}_{}".format(ell, ion)].value)
+                if use_flags != None:
+                    if not ("B" in use_flags["{}_{}".format(ell, ion)]) | ("C" in use_flags["{}_{}".format(ell, ion)]):
+                        if "MC" in use_flags["{}_{}".format(ell, ion)]:
+                            alpha = alpha_dict["MC"]
+                            color = color_dict["MC"]
+                            width = width_dict["MC"]
+                        elif "U" in use_flags["{}_{}".format(ell, ion)]:
+                            alpha = alpha_dict["U"]
+                            width = alpha_dict["U"]
+                            color = color_dict["U"]
+                        elif "MW" in use_flags["{}_{}".format(ell, ion)]:
+                            color = color_dict["MW"]
+                            alpha = 0.6
+                            width = 2
+                        else:
+                            color = "green"
+                            width = 2
+                            alpha = 0.6
+
+
+                        if "BB" in use_flags["{}_{}".format(ell, ion)]:
+                            ls = line_dict["BB"]
+                        else:
+                            ls = "-"
+
+
+                        single_profile = self.get_profile(tag, ion_pars, vel_arr = profile["vel"])
+                        single_profile_masked = np.ma.masked_array(single_profile["spec"], 
+                                                                    mask = single_profile["spec"] > .99)
+
+                        _ = ax.plot(single_profile["vel"], single_profile_masked, 
+                                    alpha = alpha, color = color, lw = width, ls = ls)
+
+
 
 
         return plt.gcf()
@@ -1651,7 +1726,8 @@ class UVSpectraRawMixin(object):
     def plot_all_region_fits(self, fig = None, n_cols = None, 
                              figsize = None, vel_range = None,
                              ratio = None, ylim_lock = None,
-                             fit_kwargs = {}, **kwargs):
+                             fit_kwargs = {}, plot_indiv_comps = False, use_flags = None,
+                             **kwargs):
         """
         method to plot all region fit
 
@@ -1744,6 +1820,9 @@ class UVSpectraRawMixin(object):
                                      ax_resid = ax_resids[plot_counter], 
                                      labelx = False, 
                                      labely = False, 
+                                     vel_range = vel_range, 
+                                     plot_indiv_comps = plot_indiv_comps, 
+                                     use_flags = use_flags,
                                      **kwargs)
             plot_counter += 1
 
@@ -1754,6 +1833,9 @@ class UVSpectraRawMixin(object):
                                          ax_resid = ax_resids[plot_counter], 
                                          labelx = False, 
                                          labely = False, 
+                                         vel_range = vel_range,
+                                         plot_indiv_comps = plot_indiv_comps, 
+                                         use_flags = use_flags,
                                          **kwargs)
                 plot_counter += 1
 

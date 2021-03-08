@@ -20,6 +20,7 @@ import pandas as pd
 from astroquery.simbad import Simbad
 
 import VoigtFit
+import pickle
 
 directory = os.path.dirname(__file__)
 
@@ -57,7 +58,9 @@ class UVSpectra(UVSpectraMixin, Table):
                  SMC_info = None, SMC_coords = None,
                  raw_df = None, 
                  raw_table = None,
-                 voigtfit_file = None,
+                 voigtfit_files = None,
+                 voigtfit = None,
+                 voigtfit_flags = None,
                  **kwargs):
 
         # Read in paths for data
@@ -75,55 +78,56 @@ class UVSpectra(UVSpectraMixin, Table):
             self.source_names = source_names
 
         # Query basic info to store
-        if source_info is None:
-            self.source_info = Simbad.query_objects(np.unique(self.source_names))
-            self.source_info["SOURCE"] = self.source_names
-        else:
-            self.source_info = source_info
+        if query:
+            if source_info is None:
+                self.source_info = Simbad.query_objects(np.unique(self.source_names))
+                self.source_info["SOURCE"] = self.source_names
+            else:
+                self.source_info = source_info
 
-        if LMC_info is None:
-            self.LMC_info = Simbad.query_object("LMC")
-        else:
-            self.LMC_info = LMC_info
+            if LMC_info is None:
+                self.LMC_info = Simbad.query_object("LMC")
+            else:
+                self.LMC_info = LMC_info
 
-        if SMC_info is None:
-            self.SMC_info = Simbad.query_object("SMC")
-        else:
-            self.SMC_info = SMC_info
+            if SMC_info is None:
+                self.SMC_info = Simbad.query_object("SMC")
+            else:
+                self.SMC_info = SMC_info
         
 
-        # Set SkyCoord objects for sources
-        if LMC_coords is None:
-            self.LMC_coords = SkyCoord(ra = self.LMC_info["RA"], 
-                dec = self.LMC_info["DEC"], 
-                unit = (u.hourangle, u.deg), 
-                frame = "icrs")
-        else:
-            self.LMC_coords = LMC_coords
+            # Set SkyCoord objects for sources
+            if LMC_coords is None:
+                self.LMC_coords = SkyCoord(ra = self.LMC_info["RA"], 
+                    dec = self.LMC_info["DEC"], 
+                    unit = (u.hourangle, u.deg), 
+                    frame = "icrs")
+            else:
+                self.LMC_coords = LMC_coords
 
-        if SMC_coords is None:
-            self.SMC_coords = SkyCoord(ra = self.SMC_info["RA"], 
-                dec = self.SMC_info["DEC"], 
-                unit = (u.hourangle, u.deg), 
-                frame = "icrs")
-        else:
-            self.SMC_coords = SMC_coords
+            if SMC_coords is None:
+                self.SMC_coords = SkyCoord(ra = self.SMC_info["RA"], 
+                    dec = self.SMC_info["DEC"], 
+                    unit = (u.hourangle, u.deg), 
+                    frame = "icrs")
+            else:
+                self.SMC_coords = SMC_coords
 
 
-        if source_coords is None:
-            self.source_coords = SkyCoord(ra = self.source_info["RA"], 
-                dec = self.source_info["DEC"], 
-                unit = (u.hourangle, u.deg),
-                frame = "icrs")
-        else:
-            self.source_coords = source_coords
+            if source_coords is None:
+                self.source_coords = SkyCoord(ra = self.source_info["RA"], 
+                    dec = self.source_info["DEC"], 
+                    unit = (u.hourangle, u.deg),
+                    frame = "icrs")
+            else:
+                self.source_coords = source_coords
 
-        if coords_dict is None:
-            self.coords_dict = {}
-            for key,value in zip(self.source_names,self.source_coords):
-                self.coords_dict[key] = value
-        else:
-            self.coords_dict = coords_dict
+            if coords_dict is None:
+                self.coords_dict = {}
+                for key,value in zip(self.source_names,self.source_coords):
+                    self.coords_dict[key] = value
+            else:
+                self.coords_dict = coords_dict
 
         if abund_files is None:
             self.abund_files = glob.glob(os.path.join(self.path,"*/*ABUND.txt"))
@@ -272,12 +276,26 @@ class UVSpectra(UVSpectraMixin, Table):
 
         # check for voigtfit data
 
-        self.voigtfit_files = glob.glob(os.path.join(self.path,"*","*_VoigtFit_DK.hdf5"))
-        self.voigtfit = {}
-        if len(self.voigtfit_files) > 0:
-            for f in self.voigtfit_files:
-                sn = f.split("/")[-1].split("_")[0]
-                self.voigtfit[sn] = UVSpectraRaw(f, from_dataset = True)
+        if voigtfit_files == None:
+            self.voigtfit_files = glob.glob(os.path.join(self.path,"*","*_VoigtFit_DK.hdf5"))
+        else:
+            self.voigtfit_files = []
+
+        if voigtfit == None:
+            self.voigtfit = {}
+            if len(self.voigtfit_files) > 0:
+                for f in self.voigtfit_files:
+                    sn = f.split("/")[-1].split("_Voigt")[0]
+                    self.voigtfit[sn] = UVSpectraRaw(f, from_dataset = True)
+
+        if voigtfit_flags == None:
+            self.voigtfit_flags = {}
+            if len(self.voigtfit_files) > 0:
+                for f in self.voigtfit_files:
+                    sn = f.split("/")[-1].split("_Voigt")[0]
+                    fn = f.split("/")[:-1]
+                    with open("/{}/{}_VoigtFit_Flags_DK.pkl".format(os.path.join(*fn), sn), "rb") as file:
+                        self.voigtfit_flags[sn] = pickle.load(file)
 
 
 
@@ -298,7 +316,9 @@ class UVSpectra(UVSpectraMixin, Table):
                                raw_df = self.raw_df, 
                                raw_table = self.raw_table, 
                                SMC_info = self.SMC_info, 
-                               SMC_coords = self.SMC_coords)
+                               SMC_coords = self.SMC_coords, 
+                               voigtfit_files = self.voigtfit_files,
+                               voigtfit = self.voigtfit)
         if self.meta:
             table.meta = self.meta.copy()  # Shallow copy for slice
         table.primary_key = self.primary_key
@@ -370,7 +390,8 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                  lines = None, 
                  velspan = None, 
                  rebin_n = None,
-                 rebin_method = None):
+                 rebin_method = None, 
+                 query = True):
 
         if not from_dataset:
             if filename.__class__ is str:
