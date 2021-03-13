@@ -3,13 +3,14 @@ include CHANGES.rst
 include setup.cfg
 include LICENSE.rst
 include pyproject.toml
-include dk_hst_tools/data/*
+
 
 
 recursive-include dk_hst_tools *.pyx *.c *.pxd
 recursive-include docs *
 recursive-include licenses *
 recursive-include scripts *
+recursive-include dk_hst_tools/data *
 
 
 prune build
