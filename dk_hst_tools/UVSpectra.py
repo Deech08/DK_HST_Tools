@@ -32,6 +32,106 @@ cite_these = {
     "Simulation Based Inference Review":"https://doi.org/10.1073/pnas.1912789117"
 }
 
+def prepare_night_only_data(directory, output_filename = None):
+    """
+    Prepares night only data for OI using G130_M COS data
+
+    Parameters
+    ----------
+    directory: `str`
+        directory of data
+    output_filename: `str`, optional, must be keyword
+        name of spectra file to save
+    """
+
+    # get source name from directory
+    source_name = directory.split("/")[-1]
+
+
+    # default output file
+    if output_filename == None:
+        output_filename = f"{source_name}_spec-G130M-N-DK"
+
+    from scipy.interpolate import interp1d
+
+    from calcos import calcos
+    from costools import timefilter
+
+    from astroquery.mast import Observations
+
+    from astropy.io import fits
+
+    # Download data
+    print(f"Downloading corrtag data for {source_name} from MAST...")
+    obs_table = Observations.query_object(source_name, radius = "2 arcmin")
+    mask = obs_table["obs_collection"] == "HST"
+    mask &= obs_table["instrument_name"] == "COS/FUV"
+    mask &= obs_table["filters"] == "G130M"
+    target_table = obs_table[mask]
+    product_list = Observations.get_product_list(target_table)
+    corrtag_mask = ["corrtag" in entry for entry in product_list["dataURI"]]
+    products = product_list[corrtag_mask]
+    manifest = Observations.download_products(products, download_dir=directory)
+
+    # Get reference files if needed
+    print("Checking for reference files...")
+    os.system("crds bestrefs --update-bestrefs --sync-references=1 --files {}/mastDownload/HST/*/*.fits".format(directory))
+
+    print("Filtering and processing night only observations...")
+    for dataset in glob.glob(f'{directory}/mastDownload/HST/*/*corrtag*.fits'):
+        filepath, filename = os.path.split(dataset)
+        print ("Filtering ", filename)
+        timefilter.TimelineFilter(input=dataset, filter='SUN_ALT > 0')
+    for dataset in glob.glob(f'{directory}/mastDownload/HST/*/*corrtag_a*.fits'):
+        calcos(dataset, outdir=f'{directory}/nightOnly/')
+
+    def avg_spectra(path):
+        wls = []
+        fluxs = []
+        errs = []
+        for dataset in glob.glob(f'{path}/nightOnly/*x1d.fits'):
+            with fits.open(dataset) as hdu:
+                f = hdu[1].data['flux'].ravel()
+                if not np.all(f == 0.):
+                    w = hdu[1].data['wavelength'].ravel()
+                    wargs = np.argsort(w)
+                    wls.append(w[wargs])
+                    fluxs.append(f[wargs])
+                    errs.append(hdu[1].data['error'].ravel()[wargs])
+                
+        if len(wls) > 1:
+            wl_master = wls[0]
+            fs = [fluxs[0]]
+            es = [errs[0]]
+            
+            for wl, f, e in zip(wls[1:], fluxs[1:], errs[1:]):
+                interper_f = interp1d(wl, f, bounds_error = False)
+                interper_e = interp1d(wl, e, bounds_error = False)
+                fs.append(interper_f(wl_master))
+                es.append(interper_e(wl_master))
+                
+            fs = np.vstack(fs)
+            es = np.vstack(es)
+            
+            f_avg = np.nanmean(fs, axis = 0)
+            e_avg = np.sqrt(np.nansum(es**2, axis = 0)/es.shape[1])
+        elif len(wls) == 1:
+            return wls[0], fluxs[0], errs[0]
+        else:
+            return [0,],[0,],[0,]
+            
+        return wl_master, f_avg, e_avg
+
+    # Averaging all observations
+    print("Averaging all observations if needed...")
+    w,f,e = avg_spectra(directory)
+
+    # write to file
+    print(f"Saving spectra to file {output_filename}")
+    np.savetxt(f"{directory}/{output_filename}", np.stack([w,f,e]).T)
+
+
+
 class UVSpectra(UVSpectraMixin, Table):
     """
     Core UV Spectra class

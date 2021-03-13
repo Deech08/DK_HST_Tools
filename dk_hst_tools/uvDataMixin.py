@@ -26,6 +26,7 @@ from VoigtFit.output import rebin_spectrum, rebin_bool_array
 
 
 
+
 class UVSpectraMixin(object):
     """
     Mixin class with convenience functionality for HST COS Data
@@ -1352,6 +1353,7 @@ class UVSpectraRawMixin(object):
         fourth order polynomial
         """
         return a*x**6 + b*x**5 + c*x**4 + d*x**3 + e*x**2 + f*x + g
+
 
     def get_profile(self, ion_wav, pars, wl_arr = None, vel_arr = None, 
                     resolution = None, redshift = None, **kwargs):
