@@ -11,7 +11,7 @@ recursive-include dk_hst_tools *.pyx *.c *.pxd
 recursive-include docs *
 recursive-include licenses *
 recursive-include scripts *
-recursive-include dk_hst_tools/data *
+recursive-include dk_hst_tools *.txt
 
 
 prune build
