@@ -103,7 +103,7 @@ def get_JBH_SMC_IonizingFlux(c, smc_par = None, SMC_coord = None):
         smc_par = 10398694.06801058
 
     # SMC coordinate
-    if SMC_coord == None:
+    if SMC_coord is None:
         SMC_coord = SkyCoord(ra = 13.15833333*u.deg, dec = -72.80027778*u.deg, 
                              distance = 60*u.kpc, frame = "icrs")
     
