@@ -152,6 +152,81 @@ def MW_LMC_SMC_IonizingFlux(c, data_filename = None, lmc_par = None, smc_par =No
     else:
         return res["TOTAL"]
 
+def get_input_spectra(c, spectra_template_filename = None, **kwargs):
+    """
+    Returns input spectra, as individual components, and combined total for MW, LMC, SMC,
+    as a dictionary 
+
+    Parameters
+    ----------
+    c: `astropy.coordinates.SkyCoord`
+        Coordinate must have 3D info
+    spectra_template_filename: `str`, optional, must be keyword
+        template tabulated spectrum, defaults to that from Fox et al. 2005 (Figure 8)
+    data_filename:
+        filename of MW ionizing flux data
+    smc_par: `number`, optional, must be keyword
+        SMC parameter for inverse squared function, default to result from DK
+    lmc_par: `number`, optional, must be keyword
+        LMC parameter for inverse squared function, default to result from DK
+    SMC_coord: `astropy.coordinates.SkyCoord`, optional, must be keyword
+        coordinate of SMC in 3D
+    LMC_coord: `astropy.coordinates.SkyCoord`, optional, must be keyword
+        coordinate of LMC in 3D
+    as_dict: `bool`, optional, must be keyword
+        if True, returns dictionary of individual and total contributions
+        if False, returns total contribution as single value
+    """
+
+    res = {}
+
+    
+    kwargs["as_dict"] = True
+
+    norms = MW_LMC_SMC_IonizingFlux(c, **kwargs)
+
+    # get spectral shape
+    if spectra_template_filename == None:
+        spectra_template_filename = os.path.join(directory,"data/JBH_RadiationField/MW.0kpc.dat")
+
+    freq, F_nu = np.loadtxt(spectra_template_filename, unpack = True)
+    freq *= u.Hz
+    F_nu *= u.erg * u.cm**-2 * u.s**-1 * u.Hz**-1
+
+    # flip if needed
+    if np.argmin(freq) != 0:
+        freq = np.flip(freq)
+        F_nu = np.flip(F_nu)
+
+    # convert to photon flux
+    phi_nu = F_nu / freq.to(u.erg, u.spectral()) * u.photon
+
+
+    # get min frequency to integrate over
+    f_0 = 1*u.Ry
+    f_0 = f_0.to(u.Hz, u.spectral())
+    mask = freq > f_0
+
+    # Get default PHI
+    PHI_0 = np.trapz(phi_nu[mask], freq[mask])
+
+    # get normalization correction_factors
+    correction_factors = {}
+    for key in ["MW","SMC","LMC","TOTAL"]:
+        correction_factors[key] = norms[key]/PHI_0
+        res[key] = F_nu[:,None] * correction_factors[key]
+        res[key] = res[key].T
+
+    res["nu"] = freq
+
+    return res, norms
+
+
+
+    
+
+
+
 
 
 

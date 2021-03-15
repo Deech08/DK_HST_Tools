@@ -1825,6 +1825,7 @@ class UVSpectraRawMixin(object):
                                      vel_range = vel_range, 
                                      plot_indiv_comps = plot_indiv_comps, 
                                      use_flags = use_flags,
+                                     fit_kwargs = fit_kwargs,
                                      **kwargs)
             plot_counter += 1
 
@@ -1838,6 +1839,7 @@ class UVSpectraRawMixin(object):
                                          vel_range = vel_range,
                                          plot_indiv_comps = plot_indiv_comps, 
                                          use_flags = use_flags,
+                                         fit_kwargs = fit_kwargs,
                                          **kwargs)
                 plot_counter += 1
 
