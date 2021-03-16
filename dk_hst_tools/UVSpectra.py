@@ -9,18 +9,21 @@ from astropy.table.column import (BaseColumn, Column, MaskedColumn, _auto_names,
 
 from astropy.constants import c as speed_of_light
 
-from .uvDataMixin import UVSpectraMixin, UVSpectraRawMixin
+from .uvDataMixin import UVSpectraMixin, UVSpectraRawMixin, CloudyModelMixin
 
 import os
 
 import glob
 import io
 import pandas as pd
+import sys
 
 from astroquery.simbad import Simbad
 
 import VoigtFit
 import pickle
+
+from .JBH_IonizationModel import get_input_spectra
 
 directory = os.path.dirname(__file__)
 
@@ -644,6 +647,199 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
         else:
             path = os.path.join("/",*self.data_files[0].split("/")[:-1], filename)
             self.dataset.save(path)
+
+
+
+
+class CloudyModel(CloudyModelMixin, object):
+    """
+    Raw UV data reader and wrapper to go through voigt fitting process
+
+    Parameters
+    ----------
+    source_name: `str`
+        Name of source
+    source_info: `astropy.table.Table`, optional, must be keyword
+        table of source info from Simbad query
+    source_coord: `astropy.coordinates.SkyCoord`, optional, must be keyword
+        Coordinate of source
+        if not provided, will query Simbad to get it
+    distance_grid_command: `list-like`, optional, must be keyword
+        [min,max,step] of distances to grid in Cloudy in log10 space and units of cm
+    hden_grid_command: `list-like`, optional, must be keyword
+        [min,max,step] of distances to grid in Cloudy of hydrogen column density in
+        log10 space and units of cm^-3
+    neutral_column_density_grid: `list-like`, optional, must be keyword
+        log10 neutral column densities grid
+    spectra_template_filename: `str`, optional, must be keyword
+        template tabulated spectrum, defaults to that from Fox et al. 2005 (Figure 8)
+    egb: `str`, optional, must be keyword
+        extragalactic background spectra to use, default to KS18 
+    ebg_redshift: `number`, optional, must be keyword
+        redshift to use for extragalactic background, default to 0
+    metalicity: `number`, optional, must be keyword
+        metalicity to use in log space relative to solar, default to -0.3
+    """
+    
+    def __init__(self, source_name, source_coord = None, source_info = None, 
+                 distance_grid_command = None, 
+                 neutral_column_density_grid = None, 
+                 spectra_template_filename = None, 
+                 egb = None, 
+                 egb_redshift = None, 
+                 cosmic_rays_background = True,
+                 species = None,
+                 metalicity = None,
+                 hden_grid_command = None,):
+
+        self.source_name = source_name
+
+        if source_info == None:
+            self.source_info = Simbad.query_object(self.source_name)
+
+        if source_coord is None:
+            self.source_coord = SkyCoord(ra = self.source_info["RA"], 
+                    dec = self.source_info["DEC"], 
+                    unit = (u.hourangle, u.deg), 
+                    frame = "icrs").transform_to('galactic')
+        else:
+            self.source_coord = source_coord.transform_to('galactic')
+
+        if distance_grid_command == None:
+            self.distance_grid_command = [22.9,23.55,0.05]
+        else:
+            self.distance_grid_command = distance_grid_command
+
+        self.distance_grid = 10**np.arange(*self.distance_grid_command) * u.cm
+        self.distnace_grid = self.distance_grid.to(u.kpc)
+
+
+        self.neutral_column_density_grid = neutral_column_density_grid
+
+        if spectra_template_filename != None:
+            self.spectra_template_filename = spectra_template_filename
+        else:
+            self.spectra_template_filename = os.path.join(directory,"data/JBH_RadiationField/Fox+2005_MW.sed")
+
+
+        if egb == None:
+            self.egb = "KS18"
+        else:
+            self.egb = egb
+
+        if egb_redshift == None:
+            self.egb_redshift = 0.
+        else:
+            self.egb_redshift = egb_redshift
+
+        self.cosmic_rays_background = cosmic_rays_background
+
+        if species == None:
+            self.species = ["H", "H+", "Si+", "Si+2", "Si+3", "C+", "C+3", "Fe+"]
+        else:
+            self.species = species
+
+
+        if metalicity == None:
+            self.metalicity = -0.3
+        else:
+            self.metalicity = metalicity
+
+        if hden_grid_command == None:
+            self.hden_grid_command = [-5,-1,0.5]
+        else:
+            self.hden_grid_command = hden_grid_command
+
+        self.hden_grid = 10**np.arange(*self.hden_grid_command) * u.cm**-3
+
+        self.input_filename = None
+
+
+        
+
+
+    def get_input_file(self, stop_neutral_column_density, distance = None, save = False):
+        """
+        Returns string of input file as list for each line of file
+        """ 
+
+        if distance == None:
+            distance = 50*u.kpc
+
+        coord_3d = SkyCoord(l = self.source_coord.l, 
+                            b = self.source_coord.b, 
+                            distance = distance, 
+                            frame = "galactic")
+
+        rad, norms = get_input_spectra(coord_3d)
+
+        input_spectra_filename = self.spectra_template_filename.split("/")[-1]
+        #see if file is available in local directory
+        if not len(glob.glob(input_spectra_filename))>0:
+            import shutil
+            shutil.copy(self.spectra_template_filename, "./")
+
+
+        file_lines = []
+
+
+        file_lines.append(f'title {self.source_name}')
+        file_lines.append('# Input Spectrum File')
+        file_lines.append(f'table SED "{input_spectra_filename}"')
+        file_lines.append('# Normalization')
+        file_lines.append(f'phi(H) = {np.log10(norms["TOTAL"].value)}')
+        file_lines.append('# Extragalactic Background')
+        file_lines.append(f'Table {self.egb} redshift {self.egb_redshift}')
+        file_lines.append('# hden')
+        file_lines.append('hden -3.0 vary')
+        file_lines.append('grid {} {} {}'.format(*self.hden_grid_command))
+
+        if self.cosmic_rays_background:
+            file_lines.append('cosmic rays background')
+
+        file_lines.append('constant density')
+        file_lines.append('# Metalcity')
+        file_lines.append(f'metals {self.metalicity} log')
+        file_lines.append('# Stop condition')
+        file_lines.append(f'stop netural column density {stop_neutral_column_density}')
+
+        file_lines.append('double optical depths')
+        file_lines.append('iterate to convergence')
+        file_lines.append('save grid separate "distance_kpc_{0:.1f}_stopNHI_{1}_gridrun.grd"'.format(distance.value, 
+                                                            stop_neutral_column_density))
+        file_lines.append('save species column densities last separate "distance_kpc_{0:.1f}_stopNHI_{1}_colden.col" no hash'.format(distance.value, 
+                                                            stop_neutral_column_density))
+        for species in self.species:
+            file_lines.append(f'"{species}"')
+
+        file_lines.append('end of species')
+        file_lines.append('print last')
+        file_lines.append('plot continuum')
+
+        if save:
+
+            with open('distance_kpc_{0:.1f}_stopNHI_{1}_input.in'.format(distance.value, 
+                                                                stop_neutral_column_density), 'w') as f:
+                for line in file_lines:
+                    print(line, file = f)
+
+            self.input_filename = 'distance_kpc_{0:.1f}_stopNHI_{1}_input.in'.format(distance.value, 
+                                                                stop_neutral_column_density)
+
+        return file_lines
+
+    def print_input_file(self, file_lines):
+        for line in file_lines:
+            print(line)
+
+
+
+
+
+
+
+
+
 
 
 

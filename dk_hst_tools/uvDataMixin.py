@@ -2201,6 +2201,88 @@ class UVSpectraRawMixin(object):
 
 
 
+class CloudyModelMixin(object):
+    """
+    Mixin class for Cloudy Photoionization models
+    """
+
+
+    def update_distance_grid_command(self, distance_grid_command):
+        self.distance_grid_command = distance_grid_command
+        self.distance_grid = 10**np.arange(*self.distance_grid_command) * u.cm
+        self.distnace_grid = self.distance_grid.to(u.kpc)
+
+    def update_hden_grid_command(self, hden_grid_command):
+        self.hden_grid_command = hden_grid_command
+        self.hden_grid = 10**np.arange(*self.hden_grid_command) * u.cm**-3
+
+
+
+    def read_results(self, grid_hden = True):
+        # make sure input filename is there
+        if self.input_filename == None:
+            raise ValueError("No input filename attribute set!, Try running get_input_file method first")
+
+        # get filename_template
+        fn_temp = self.input_filename.split(".in")[0]
+
+        # colden files:
+        colden_files = np.sort(glob.glob(f"grid*_{fn_temp}_colden.col"))
+
+        #grid_files
+        grd_files = np.sort(glob.glob(f"grid*_{fn_temp}_gridrun.grd"))
+
+        # Get grid parameters
+        if grid_hden:
+            t = Table(names = ["INDEX", "FAILURE", "WARNINGS", "EXIT_CODE", "RANK", "SEQ", "HDEN", "HDEN_STR"],
+                      dtype=(np.int, np.bool, np.bool, '<U9', np.int, np.int, np.float, '<U9'))
+            str_to_bool = {"F":False, "T":True}
+
+            # read lines
+            for file in grd_files:
+                with open(f, "r") as f:
+                    lines = f.readlines()
+                    row = lines[-1].strip("\n").split("\t")
+                    row_input = [entry.strip(" ") if entry not in ["F", "T"] else str_to_bool[entry] for entry in row]
+                    t.add_row(row_input)
+
+
+        # Get coldens
+        def species_to_colden_str(string):
+            split_str = string.split("+")
+            if len(split_str) == 1:
+                return f"N_{string}I"
+            else:
+                ion_number_dict = {
+                    "":"II",
+                    "2":"III",
+                    "3":"IV",
+                    "4":"V",
+                    "5":"VI"
+                }
+
+                return f"N_{split_str[0]}{ion_number_dict[split_str[-1]]}"
+
+
+        t2 = Table(names = [*map(species_to_colden_str, self.species)], 
+                   dtype = ["float"]*len(self.species))
+        # read lines
+        for file in colden_files:
+            with open(f, "r") as f:
+                lines = f.readlines()
+                row = lines[-1].strip("\n").split("\t")
+                t.add_row(row)
+
+
+
+
+
+
+
+
+
+
+
 
 
 

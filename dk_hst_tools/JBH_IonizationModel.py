@@ -68,7 +68,13 @@ def get_JBH_LMC_IonizingFlux(c, lmc_par = None, LMC_coord = None):
     # transform_coordinates
     if LMC_coord is None:
         if hasattr(c, "LMC_coord"):
-            LMC_coord = c.LMC_coord
+            if c.LMC_coord is not None:
+                LMC_coord = c.LMC_coord
+            else:
+                LMC_coord = SkyCoord(ra = 80.89416667 * u.deg, 
+                                 dec = -69.75611111 * u.deg,
+                                 distance = 50.0 * u.kpc, 
+                                 frame = "icrs")
         else:
             LMC_coord = SkyCoord(ra = 80.89416667 * u.deg, 
                                  dec = -69.75611111 * u.deg,
