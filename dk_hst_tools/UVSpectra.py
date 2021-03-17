@@ -746,7 +746,7 @@ class CloudyModel(CloudyModelMixin, object):
             self.metalicity = metalicity
 
         if hden_grid_command == None:
-            self.hden_grid_command = [-5,-1,0.5]
+            self.hden_grid_command = [-4,-1,0.5]
         else:
             self.hden_grid_command = hden_grid_command
 
@@ -787,7 +787,7 @@ class CloudyModel(CloudyModelMixin, object):
         file_lines.append('# Input Spectrum File')
         file_lines.append(f'table SED "{input_spectra_filename}"')
         file_lines.append('# Normalization')
-        file_lines.append(f'phi(H) = {np.log10(norms["TOTAL"].value)}')
+        file_lines.append(f'phi(H) = {np.log10(norms["TOTAL"].value[0])}')
         file_lines.append('# Extragalactic Background')
         file_lines.append(f'Table {self.egb} redshift {self.egb_redshift}')
         file_lines.append('# hden')

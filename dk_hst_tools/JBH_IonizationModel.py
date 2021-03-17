@@ -9,7 +9,27 @@ from astropy.coordinates import SkyCoord
 
 directory = os.path.dirname(__file__)
 # directory = "/Users/dkrishnarao/Documents/GitHub/DK_HST_Tools/dk_hst_tools/"
+def get_egb_extra_term(egb_template_filename = None):
+    """
+    returns phi from extragalactic background to be subtracted 
 
+    Parameters
+    ----------
+    egb_template_filename:
+        filename of EGB ionizing flux data
+    """
+
+    # get data
+    if egb_template_filename == None:
+        egb_template_filename = os.path.join(directory, "data/JBH_RadiationField/egb_Fox2014.sed")
+
+    nu, fnu = np.loadtxt(egb_template_filename, unpack = True)
+    nu*= u.Hz
+    fnu*= u.erg * u.cm**-2 * u.s**-1 * u.Hz**-1
+    nu_e = nu.to(u.Ry, u.spectral())
+    mask = nu_e > 1*u.Ry
+    phi_nu = fnu / nu.to(u.erg, u.spectral()) * u.photon
+    return np.trapz(phi_nu[mask], nu[mask])
 
 def get_JBH_MW_IonizingFlux(c, data_filename = None):
     """
@@ -40,7 +60,10 @@ def get_JBH_MW_IonizingFlux(c, data_filename = None):
                    method = 'cubic', 
                    rescale = True)
     
-    return 10**PHI * u.photon * u.cm**-2 * u.s**-1
+    res =  10**PHI * u.photon * u.cm**-2 * u.s**-1
+
+    egb = get_egb_extra_term()
+    return res - egb
 
 
     
@@ -85,7 +108,10 @@ def get_JBH_LMC_IonizingFlux(c, lmc_par = None, LMC_coord = None):
     LMC_distance = c.separation_3d(LMC_coord).to(u.kpc).value
 
 
-    return inverse_r2(LMC_distance, lmc_par) * u.photon * u.cm**-2 *u.s**-1
+    res =  inverse_r2(LMC_distance, lmc_par) * u.photon * u.cm**-2 *u.s**-1
+
+    egb = get_egb_extra_term()
+    return res - egb
 
 def get_JBH_SMC_IonizingFlux(c, smc_par = None, SMC_coord = None):
     """
@@ -117,7 +143,10 @@ def get_JBH_SMC_IonizingFlux(c, smc_par = None, SMC_coord = None):
     # transform coordinates
     SMC_distance = c.separation_3d(SMC_coord).to(u.kpc).value
 
-    return inverse_r2(SMC_distance, smc_par) * u.photon * u.cm**-2 *u.s**-1
+    res =  inverse_r2(SMC_distance, smc_par) * u.photon * u.cm**-2 *u.s**-1
+
+    egb = get_egb_extra_term()
+    return res - egb
 
 def MW_LMC_SMC_IonizingFlux(c, data_filename = None, lmc_par = None, smc_par =None, 
                             SMC_coord = None, LMC_coord = None, as_dict = False):
@@ -158,7 +187,7 @@ def MW_LMC_SMC_IonizingFlux(c, data_filename = None, lmc_par = None, smc_par =No
     else:
         return res["TOTAL"]
 
-def get_input_spectra(c, spectra_template_filename = None, **kwargs):
+def get_input_spectra(c, spectra_template_filename = None, egb_template_filename = None, **kwargs):
     """
     Returns input spectra, as individual components, and combined total for MW, LMC, SMC,
     as a dictionary 

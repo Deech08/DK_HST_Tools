@@ -3,6 +3,7 @@ import logging
 import astropy.units as u
 from astropy.coordinates import SkyCoord, concatenate
 from astropy.constants import c as speed_of_light
+from astropy.table import QTable, Table, hstack
 import numpy as np
 
 import matplotlib.pyplot as plt
@@ -14,6 +15,7 @@ from pymccorrelation import pymccorrelation
 from pykrige.uk import UniversalKriging
 
 import os
+import glob
 
 from spectral_cube import SpectralCube
 
@@ -2218,13 +2220,16 @@ class CloudyModelMixin(object):
 
 
 
-    def read_results(self, grid_hden = True):
+    def read_results(self, input_filename = None, grid_hden = True):
         # make sure input filename is there
-        if self.input_filename == None:
-            raise ValueError("No input filename attribute set!, Try running get_input_file method first")
+        if input_filename == None:
+            if self.input_filename == None:
+                raise ValueError("No input filename attribute set!, Try running get_input_file method first")
+        else:
+            self.input_filename = input_filename
 
         # get filename_template
-        fn_temp = self.input_filename.split(".in")[0]
+        fn_temp = self.input_filename.split("_input")[0]
 
         # colden files:
         colden_files = np.sort(glob.glob(f"grid*_{fn_temp}_colden.col"))
@@ -2234,17 +2239,19 @@ class CloudyModelMixin(object):
 
         # Get grid parameters
         if grid_hden:
-            t = Table(names = ["INDEX", "FAILURE", "WARNINGS", "EXIT_CODE", "RANK", "SEQ", "HDEN", "HDEN_STR"],
+            t = QTable(names = ["INDEX", "FAILURE", "WARNINGS", "EXIT_CODE", "RANK", "SEQ", "HDEN", "HDEN_STR"],
                       dtype=(np.int, np.bool, np.bool, '<U9', np.int, np.int, np.float, '<U9'))
             str_to_bool = {"F":False, "T":True}
 
             # read lines
             for file in grd_files:
-                with open(f, "r") as f:
+                with open(file, "r") as f:
                     lines = f.readlines()
                     row = lines[-1].strip("\n").split("\t")
                     row_input = [entry.strip(" ") if entry not in ["F", "T"] else str_to_bool[entry] for entry in row]
                     t.add_row(row_input)
+
+            t["DISTANCE"] = np.ones_like(t["HDEN"])*np.float64(fn_temp.split("_")[2])
 
 
         # Get coldens
@@ -2264,17 +2271,17 @@ class CloudyModelMixin(object):
                 return f"N_{split_str[0]}{ion_number_dict[split_str[-1]]}"
 
 
-        t2 = Table(names = [*map(species_to_colden_str, self.species)], 
-                   dtype = ["float"]*len(self.species))
+        t2 = QTable(names = [*map(species_to_colden_str, self.species)], 
+                   dtype = ["float"]*len(self.species), units = ["cm**-2"]*len(self.species))
         # read lines
         for file in colden_files:
-            with open(f, "r") as f:
+            with open(file, "r") as f:
                 lines = f.readlines()
                 row = lines[-1].strip("\n").split("\t")
-                t.add_row(row)
+                t2.add_row([np.float64(val)*u.cm**-2 for val in row])
 
 
-
+        return hstack([t,t2])
 
 
 
