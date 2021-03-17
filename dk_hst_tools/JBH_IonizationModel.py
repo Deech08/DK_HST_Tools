@@ -62,12 +62,12 @@ def get_JBH_MW_IonizingFlux(c, data_filename = None):
     
     res =  10**PHI * u.photon * u.cm**-2 * u.s**-1
 
-    egb = get_egb_extra_term()
-    out = res - egb
-    mask = out<0* u.photon * u.cm**-2 *u.s**-1
-    out[mask] = 0.1* u.photon * u.cm**-2 *u.s**-1
+    # egb = get_egb_extra_term()
+    # out = res - egb
+    # mask = out<0* u.photon * u.cm**-2 *u.s**-1
+    # out[mask] = 0.1* u.photon * u.cm**-2 *u.s**-1
 
-    return out
+    return res
 
 
     
@@ -114,12 +114,12 @@ def get_JBH_LMC_IonizingFlux(c, lmc_par = None, LMC_coord = None):
 
     res =  inverse_r2(LMC_distance, lmc_par) * u.photon * u.cm**-2 *u.s**-1
 
-    egb = get_egb_extra_term()
-    out = res - egb
-    mask = out<0* u.photon * u.cm**-2 *u.s**-1
-    out[mask] = 0.1* u.photon * u.cm**-2 *u.s**-1
+    # egb = get_egb_extra_term()
+    # out = res - egb
+    # mask = out<0* u.photon * u.cm**-2 *u.s**-1
+    # out[mask] = 0.1* u.photon * u.cm**-2 *u.s**-1
 
-    return out
+    return res
     
 
 
@@ -155,12 +155,12 @@ def get_JBH_SMC_IonizingFlux(c, smc_par = None, SMC_coord = None):
 
     res =  inverse_r2(SMC_distance, smc_par) * u.photon * u.cm**-2 *u.s**-1
 
-    egb = get_egb_extra_term()
-    out = res - egb
-    mask = out<0* u.photon * u.cm**-2 *u.s**-1
-    out[mask] = 0.1* u.photon * u.cm**-2 *u.s**-1
+    # egb = get_egb_extra_term()
+    # out = res - egb
+    # mask = out<0* u.photon * u.cm**-2 *u.s**-1
+    # out[mask] = 0.1* u.photon * u.cm**-2 *u.s**-1
 
-    return out
+    return res
 
 def MW_LMC_SMC_IonizingFlux(c, data_filename = None, lmc_par = None, smc_par =None, 
                             SMC_coord = None, LMC_coord = None, as_dict = False):
