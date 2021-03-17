@@ -65,7 +65,7 @@ def get_JBH_MW_IonizingFlux(c, data_filename = None):
     egb = get_egb_extra_term()
     out = res - egb
     mask = out<0* u.photon * u.cm**-2 *u.s**-1
-    out[mask] = 0* u.photon * u.cm**-2 *u.s**-1
+    out[mask] = 0.1* u.photon * u.cm**-2 *u.s**-1
 
     return out
 
@@ -117,7 +117,7 @@ def get_JBH_LMC_IonizingFlux(c, lmc_par = None, LMC_coord = None):
     egb = get_egb_extra_term()
     out = res - egb
     mask = out<0* u.photon * u.cm**-2 *u.s**-1
-    out[mask] = 0* u.photon * u.cm**-2 *u.s**-1
+    out[mask] = 0.1* u.photon * u.cm**-2 *u.s**-1
 
     return out
     
@@ -158,7 +158,7 @@ def get_JBH_SMC_IonizingFlux(c, smc_par = None, SMC_coord = None):
     egb = get_egb_extra_term()
     out = res - egb
     mask = out<0* u.photon * u.cm**-2 *u.s**-1
-    out[mask] = 0* u.photon * u.cm**-2 *u.s**-1
+    out[mask] = 0.1* u.photon * u.cm**-2 *u.s**-1
 
     return out
 
