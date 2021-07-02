@@ -3,7 +3,7 @@ import logging
 import astropy.units as u
 from astropy.coordinates import SkyCoord, concatenate
 from astropy.constants import c as speed_of_light
-from astropy.table import QTable, Table, hstack
+from astropy.table import QTable, Table, hstack, vstack
 import numpy as np
 
 import matplotlib.pyplot as plt
@@ -1299,15 +1299,140 @@ class UVSpectraMixin(object):
 
 
 
+    def plot_source_spectra(self, source_name,
+                            figsize = None,
+                            hspace = None,
+                            wspace = None,
+                            include_fits = True, 
+                            include_components = True,
+                            lines = None, 
+                            n_cols = 2,
+                            vel_range = None, ):
+        """
+        Summary Plot of all fits
+        """
+
+        # get relevent data
+
+        fit_results = self.voigtfit[source_name]
+        fit_flags = self.voigtfit_flags[source_name]
+
+        # create figure
+
+        if figsize == None:
+            figsize = (8.5,11)
+        fig = plt.figure(figsize = figsize)
+
+        # check on ions to include
+        if lines == None:
+            lines = [
+                "OI_1302",
+                "CII_1334",
+                "CIIa_1335.71",
+                "SiII_1190", 
+                "SiII_1193", 
+                "SiII_1260",
+                "SiII_1304",
+                "SiII_1526",
+                "SiIII_1206", 
+                "FeII_1608",
+                "FeII_1144",
+                "AlII_1670",
+                "CIV_1548",
+                "CIV_1550",
+                "SiIV_1393", 
+                "SiIV_1402",
+            ]
+
+        n_lines = len(lines)
+
+        n_rows = int(np.ceil(n_lines / n_cols))
+
+        if hspace == None:
+            hspace = 0.3
+        if wspace == None:
+            wspace = 0.2
+
+        # create grid
+        gs = plt.GridSpec(n_rows,n_cols,hspace = hspace, wspace = wspace)
 
 
+        if vel_range == None:
+            vel_range = [-500.,500.]
+
+        print(vel_range)
 
 
-
-
-
-
+        axs = {}
+        current_col = 0
+        current_row = 0
+        for tag in lines:
+            if current_row < n_rows:
+                axs[tag] = fig.add_subplot(gs[current_row,current_col])
+                current_row += 1
+            else:
+                current_row = 0
+                current_col += 1
+                axs[tag] = fig.add_subplot(gs[current_row,current_col])
+                current_row += 1
+            axs[tag].tick_params(axis='both', which='both', labelsize=8)
+            axs[tag].set_xlim(vel_range)
+            if tag == "CIIa_1335.71":
+                axs[tag].set_ylabel(r"CII* $\lambda$1335", fontsize = 10)
+            else:
+                axs[tag].set_ylabel(r"{0} $\lambda${1}".format(*tag.split("_")), fontsize = 10)
+                
+                
+        # Step through each region and plot fits
+        def plot_fits(self, ions = "LOW"):
+            n_regions = len(fit_results[ions].dataset.regions)
+            repeat = False
+            SiIV_0 = False
+            SiIV_1 = False
+            for ell in range(n_regions):
+                # get tag
+                lines = fit_results[ions].dataset.regions[ell].lines
+                for sub_region_ind,line in enumerate(lines):
+                    tag = line.tag
+                    if (tag == "SiIV_1393") & (SiIV_0 == False):
+                        SiIV_0 = True
+                        tag = "SiIV_1393__0"
+                    elif (tag == "SiIV_1402") & (SiIV_1 == False):
+                        SiIV_1 = True
+                        tag = "SiIV_1402__0"
+                    if (tag == "SiIV_1393") & (SiIV_0 == True):
+                        SiIV_0 = False
+                        tag = "SiIV_1393__1"
+                    elif (tag == "SiIV_1402") & (SiIV_1 == True):
+                        SiIV_1 = False
+                        tag = "SiIV_1402__1"
+                        
+                    try:    
+                        _ = fit_results[ions].plot_region_fit(ell, sub_region_ind = sub_region_ind, 
+                                                          vel_range = vel_range,
+                                                          ax = axs[tag.split("__")[0]], 
+                                                          labelx = False,
+                                                          labely = False, 
+                                                          ylabel_as_ion = True,
+                                                          lw = 1, 
+                                                          alpha = 0.6,
+                                                          fit_kwargs = {"lw":1, "alpha":0.7},
+                                                          comp_scale = .2, 
+                                                          plot_indiv_comps = True)
+                    except KeyError:
+                        # skip
+                        pass
+                        
         
+        plot_fits(self, ions = "LOW")
+        plot_fits(self, ions = "HIGH")
+        
+        for tag in lines:
+            ylim = axs[tag].get_ylim()
+            ylim = axs[tag].set_ylim(0.0,ylim[1])
+        
+        return fig
+
 
 
 
@@ -1355,6 +1480,29 @@ class UVSpectraRawMixin(object):
         fourth order polynomial
         """
         return a*x**6 + b*x**5 + c*x**4 + d*x**3 + e*x**2 + f*x + g
+
+
+    def filter_regions(self):
+        """
+        Filters out regions from auto reading in data to exclude "bad" sections 
+
+
+        """
+        # Check data files
+
+        to_remove_inds = []
+        for ell,region in enumerate(self.dataset.regions):
+            try:
+                if region.specID.split("_")[-1] != str(self.filter_dict[self.tag_file_pairs[region.lines[0].tag]]):
+                    to_remove_inds.append(ell)
+            except KeyError:
+                pass
+
+        if len(to_remove_inds) > 0:
+            for ell in np.flip(to_remove_inds):
+                _ = self.dataset.regions.pop(ell)
+
+
 
 
     def get_profile(self, ion_wav, pars, wl_arr = None, vel_arr = None, 
@@ -1452,7 +1600,7 @@ class UVSpectraRawMixin(object):
     def plot_region_fit(self, region_ind, sub_region_ind = None, vel_range = None,
                         ax = None, ax_resid = None, figsize = None, labelx = True, 
                         labely = True, comp_scale = None, fit_kwargs = {}, comp_kwargs = {},
-                        plot_indiv_comps = False, use_flags = None,
+                        plot_indiv_comps = False, use_flags = None, ylabel_as_ion = False,
                         **kwargs):
         """
         method to plot a single region fit
@@ -1483,6 +1631,8 @@ class UVSpectraRawMixin(object):
             keywords for vlines marker component velocities
 
         """
+        if self.pre_rebin:
+            rebin_n = 1
 
         if ax is None:
             fig = plt.figure(figsize = figsize)
@@ -1522,15 +1672,23 @@ class UVSpectraRawMixin(object):
 
         ion_pars = {"v":[], "b":[], "logN":[]}
         for ell in range(n_comp):
-            ion_pars["v"].append(pars["z{}_{}".format(ell, ion)].value * speed_of_light.to(u.km/u.s).value)
+            ion_pars["v"].append((pars["z{}_{}".format(ell, ion)].value) * speed_of_light.to(u.km/u.s).value)
             ion_pars["b"].append(pars["b{}_{}".format(ell, ion)].value)
             ion_pars["logN"].append(pars["logN{}_{}".format(ell, ion)].value)
 
 
         # Get data
         wl, spec, err, spectra_mask_o = self.dataset.regions[region_ind].unpack()
-        wl_r, spec_r, err_r = rebin_spectrum(wl, spec, err, self.rebin_n, method = self.rebin_method)
-        spectra_mask = rebin_bool_array(spectra_mask_o, self.rebin_n)
+        if not self.pre_rebin:
+            if self.dataset.regions[region_ind].specID.split("_")[-1] != str(self.filter_dict["G160M"]):
+                rebin_n = 5
+            else:
+                rebin_n = 3
+        else:
+            rebin_n = 1
+
+        wl_r, spec_r, err_r = rebin_spectrum(wl, spec, err, rebin_n, method = self.rebin_method)
+        spectra_mask = rebin_bool_array(spectra_mask_o, rebin_n)
 
         mask_idx = np.where(spectra_mask == 0)[0]
         mask_idxp1 = mask_idx+1
@@ -1566,8 +1724,8 @@ class UVSpectraRawMixin(object):
             fit_kwargs["lw"] = kwargs["lw"]
         if "alpha" not in fit_kwargs:
             fit_kwargs["alpha"] = kwargs["alpha"]
-        if "drawstyle" not in fit_kwargs:
-            fit_kwargs["drawstyle"] = kwargs["drawstyle"]
+        # if "drawstyle" not in fit_kwargs:
+        #     fit_kwargs["drawstyle"] = kwargs["drawstyle"]
         if "color" not in fit_kwargs:
             fit_kwargs["color"] = "r"
 
@@ -1625,17 +1783,22 @@ class UVSpectraRawMixin(object):
         ylim = ax.get_ylim()
 
         # add label
-        _ = ax.text(xlim[0]+np.abs(np.diff(xlim)*.05), ylim[0]+np.abs(np.diff(ylim)*0.05), 
-                    r"{} $\lambda${}".format(tag.split("_")[0], tag.split("_")[1]), 
-                    fontsize = 12, 
-                    ha = "left", 
-                    va = "bottom")
+        if not ylabel_as_ion:
+            _ = ax.text(xlim[0]+np.abs(np.diff(xlim)*.05), ylim[0]+np.abs(np.diff(ylim)*0.05), 
+                        r"{} $\lambda${}".format(tag.split("_")[0], tag.split("_")[1]), 
+                        fontsize = 12, 
+                        ha = "left", 
+                        va = "bottom")
 
         # axis labels
         if labelx:
             _ = ax.set_xlabel("LSR Velocity (km/s)", fontsize = 12)
         if labely:
-            _ = ax.set_ylabel("Normalized Flux", fontsize = 12)
+            if not ylabel_as_ion:
+                _ = ax.set_ylabel("Normalized Flux", fontsize = 12)
+            else:
+                _ = ax.set_ylabel(r"{} $\lambda${}".format(tag.split("_")[0], tag.split("_")[1]), 
+                                  fontsize = 12)
 
         # set resid ylim
         if ax_resid != None:
@@ -1643,7 +1806,7 @@ class UVSpectraRawMixin(object):
 
         # mark components
         if comp_scale == None:
-            comp_scale = 1.
+            comp_scale = .1
         for vel in ion_pars["v"]:
             vel_shifted = vel - self.redshift * speed_of_light.to(u.km/u.s).value
             if "alpha" not in comp_kwargs:
@@ -1652,7 +1815,7 @@ class UVSpectraRawMixin(object):
                 comp_kwargs["color"] = "b"
             if "lw" not in comp_kwargs:
                 comp_kwargs["lw"] = 2
-            _ = ax.plot([vel_shifted, vel_shifted], [1 - comp_scale * cont_err, 1 + comp_scale * cont_err], 
+            _ = ax.plot([vel_shifted, vel_shifted], [1 - comp_scale, 1 + comp_scale], 
                 **comp_kwargs)
 
         if plot_indiv_comps:
@@ -1682,7 +1845,7 @@ class UVSpectraRawMixin(object):
 
             for ell in range(n_comp):
                 ion_pars = {"v":[], "b":[], "logN":[]}
-                ion_pars["v"].append(pars["z{}_{}".format(ell, ion)].value * speed_of_light.to(u.km/u.s).value)
+                ion_pars["v"].append((pars["z{}_{}".format(ell, ion)].value) * speed_of_light.to(u.km/u.s).value)
                 ion_pars["b"].append(pars["b{}_{}".format(ell, ion)].value)
                 ion_pars["logN"].append(pars["logN{}_{}".format(ell, ion)].value)
                 if use_flags != None:
@@ -1718,6 +1881,14 @@ class UVSpectraRawMixin(object):
                         _ = ax.plot(single_profile["vel"], single_profile_masked, 
                                     alpha = alpha, color = color, lw = width, ls = ls)
 
+                else:
+                    single_profile = self.get_profile(tag, ion_pars, vel_arr = profile["vel"])
+                    single_profile_masked = np.ma.masked_array(single_profile["spec"], 
+                                                                mask = single_profile["spec"] > .99)
+
+                    _ = ax.plot(single_profile["vel"], single_profile_masked, 
+                                alpha = 0.6, color = 'b', lw = 1, ls = "-")
+
 
 
 
@@ -1729,7 +1900,7 @@ class UVSpectraRawMixin(object):
 
     def plot_all_region_fits(self, fig = None, n_cols = None, 
                              figsize = None, vel_range = None,
-                             ratio = None, ylim_lock = None,
+                             ratio = None, ylim_lock = None, ylabel_as_ion = False,
                              fit_kwargs = {}, plot_indiv_comps = False, use_flags = None,
                              **kwargs):
         """
@@ -1799,8 +1970,13 @@ class UVSpectraRawMixin(object):
 
 
             # add ylabel if necessary
-            if col_counter == 0:
-                _ = axs[ell].set_ylabel("Normalized Flux")
+            if not ylabel_as_ion:
+                if col_counter == 0:
+                    _ = axs[ell].set_ylabel("Normalized Flux")
+            else:
+                if col_counter == 1:
+                    _ = axs[ell].yaxis.tick_right()
+                    _ = axs[ell].yaxis.set_label_position("right")
 
             if row_counter == n_rows-1:
                 _ = axs[ell].set_xlabel("LSR Velocity (km/s)")
@@ -1823,11 +1999,12 @@ class UVSpectraRawMixin(object):
                                      ax = axs[plot_counter], 
                                      ax_resid = ax_resids[plot_counter], 
                                      labelx = False, 
-                                     labely = False, 
+                                     labely = ylabel_as_ion, 
                                      vel_range = vel_range, 
                                      plot_indiv_comps = plot_indiv_comps, 
                                      use_flags = use_flags,
                                      fit_kwargs = fit_kwargs,
+                                     ylabel_as_ion = ylabel_as_ion,
                                      **kwargs)
             plot_counter += 1
 
@@ -1837,11 +2014,12 @@ class UVSpectraRawMixin(object):
                                          ax = axs[plot_counter], 
                                          ax_resid = ax_resids[plot_counter], 
                                          labelx = False, 
-                                         labely = False, 
+                                         labely = ylabel_as_ion, 
                                          vel_range = vel_range,
                                          plot_indiv_comps = plot_indiv_comps, 
                                          use_flags = use_flags,
                                          fit_kwargs = fit_kwargs,
+                                         ylabel_as_ion = ylabel_as_ion,
                                          **kwargs)
                 plot_counter += 1
 
@@ -1880,7 +2058,8 @@ class UVSpectraRawMixin(object):
             if provided, also plots the fits
 
         """
-
+        if self.pre_rebin:
+            rebin_n = 1
         # check kwargs:
         if "lw" not in kwargs:
             kwargs["lw"] = 2
@@ -1911,7 +2090,12 @@ class UVSpectraRawMixin(object):
             wl = region.wl
             spec = region.flux
             err = region.err
-            wl_r, spec_r, err_r = rebin_spectrum(wl, spec, err, self.rebin_n, method = self.rebin_method)
+            if not self.pre_rebin:
+                if region.specID.split("_")[-1] != str(self.filter_dict["G160M"]):
+                    rebin_n = 5
+                else:
+                    rebin_n = 3
+            wl_r, spec_r, err_r = rebin_spectrum(wl, spec, err, rebin_n, method = self.rebin_method)
 
             if not velocity:
                 xx = wl_r
@@ -1926,8 +2110,15 @@ class UVSpectraRawMixin(object):
             ylim = ax.get_ylim()
 
             if plot_cont:
+                if not self.pre_rebin:
+                    if region.specID.split("_")[-1] != str(self.filter_dict["G160M"]):
+                        rebin_n = 5
+                    else:
+                        rebin_n = 3
+                else:
+                    self.rebin_n = 1
                 wl_r, spec_r, err_r = rebin_spectrum(region.wl, continuum[ell][0], region.err, 
-                                                     self.rebin_n, method = self.rebin_method)
+                                                     rebin_n, method = self.rebin_method)
                 ax.plot(xx, spec_r, color = "orange", alpha = 0.8, lw = 1, ls = "--")
 
             
@@ -1955,7 +2146,8 @@ class UVSpectraRawMixin(object):
                          mask = None, 
                          left_mask_region = None, 
                          right_mask_region = None, 
-                         func = None):
+                         func = None, 
+                         use_polyfit = True, order = None):
         """
         Normalize Spectrum with polynomial continuum fit
         
@@ -1976,10 +2168,16 @@ class UVSpectraRawMixin(object):
         -------
         continuum, continuum_error
         """
-        from scipy.optimize import curve_fit
+        if not use_polyfit:
+            from scipy.optimize import curve_fit
 
-        if func == None:
-            func = self.firstOfunc
+
+
+            if func == None:
+                func = self.firstOfunc
+        else:
+            if order == None:
+                order = 1
 
         region = self.dataset.regions[region_ind]
         
@@ -2000,19 +2198,25 @@ class UVSpectraRawMixin(object):
             fit_wl = region.wl[c_mask]
             fit_flux = region.flux[c_mask]
 
-        
-        popt, pcov = curve_fit(func, fit_wl, fit_flux)
-        continuum = func(region.wl, *popt)
-        e_continuum = np.std(fit_flux - func(fit_wl, *popt))
-        
-        return continuum, e_continuum / np.median(continuum)
+        if not use_polyfit:
+            popt, pcov = curve_fit(func, fit_wl, fit_flux)
+            continuum = func(region.wl, *popt)
+            e_continuum = np.std(fit_flux - func(fit_wl, *popt))
+            
+            return continuum, e_continuum / np.median(continuum)
+        else:
+            z = np.polyfit(fit_wl, fit_flux, order)
+            p = np.poly1d(z)
+            continuum = p(region.wl)
+            e_continuum = np.std(fit_flux - p(fit_wl))
+            return continuum, e_continuum / np.median(continuum)
 
     def normalize_all_regions(self, 
                               masks = None, 
                               left_mask_regions = None, 
                           right_mask_regions = None, 
                           func = None, 
-                          apply_all = False):
+                          apply_all = False, order = None, use_polyfit = False):
         """
         Normalize Spectra with polynomial continuum fit for all regions in dataset
         
@@ -2048,7 +2252,8 @@ class UVSpectraRawMixin(object):
             for ell, (region, left_mask_region, right_mask_region) in enumerate(zip(self.dataset.regions, 
                                                                                     left_mask_regions, 
                                                                                     right_mask_regions)):
-                continuum, cont_err = self.normalize_region(ell, left_mask_region, right_mask_region, func = func)
+                continuum, cont_err = self.normalize_region(ell, left_mask_region, right_mask_region, 
+                                                            func = func, order = order, use_polyfit = use_polyfit)
                 output.append([continuum, cont_err])
                 if apply_all:
                     self.dataset.regions[ell].flux = region.flux / continuum
@@ -2063,7 +2268,8 @@ class UVSpectraRawMixin(object):
             
             output = []
             for ell, (region, mask) in enumerate(zip(self.dataset.regions, masks)):
-                continuum, cont_err = self.normalize_region(ell, mask = mask, func = func)
+                continuum, cont_err = self.normalize_region(ell, mask = mask, func = func, 
+                                                            order = order, use_polyfit = use_polyfit)
                 output.append([continuum, cont_err])
                 if apply_all:
                     self.dataset.regions[ell].flux = region.flux / continuum
@@ -2101,7 +2307,7 @@ class UVSpectraRawMixin(object):
                 print("")
 
 
-    def prepare_params(self, apply = True):
+    def prepare_params(self, apply = True, custom_vel_tie = False):
         """
         Prepare lmfit parameters for fitting process
          
@@ -2114,6 +2320,8 @@ class UVSpectraRawMixin(object):
         -------
         Parameters
         """
+
+        vel_thresh_to_z = 5./ speed_of_light.to(u.km/u.s).value
         
         pars = Parameters()
         for ion in self.dataset.components.keys():
@@ -2138,7 +2346,15 @@ class UVSpectraRawMixin(object):
                 N_name = 'logN%i_%s' % (n, ion)
 
                 if comp.tie_z:
-                    pars[z_name].expr = comp.tie_z
+                    if custom_vel_tie:
+                        pars.add(f"delta_{z_name}", 
+                                 value = np.float64(0.), 
+                                 vary = True, 
+                                 min = np.float64(-vel_thresh_to_z),
+                                 max = np.float64(vel_thresh_to_z))
+                        pars[z_name].expr = f"{comp.tie_z}+delta_{z_name}"
+                    else:
+                        pars[z_name].expr = comp.tie_z
                 if comp.tie_b:
                     pars[b_name].expr = comp.tie_b
                 if comp.tie_N:
@@ -2220,7 +2436,7 @@ class CloudyModelMixin(object):
 
 
 
-    def read_results(self, input_filename = None, grid_hden = True):
+    def read_results(self, input_filename = None, grid_hden = True, grid_metals = True):
         # make sure input filename is there
         if input_filename == None:
             if self.input_filename == None:
@@ -2239,19 +2455,37 @@ class CloudyModelMixin(object):
 
         # Get grid parameters
         if grid_hden:
-            t = QTable(names = ["INDEX", "FAILURE", "WARNINGS", "EXIT_CODE", "RANK", "SEQ", "HDEN", "HDEN_STR"],
-                      dtype=(np.int, np.bool, np.bool, '<U9', np.int, np.int, np.float, '<U9'))
-            str_to_bool = {"F":False, "T":True}
+            if not grid_metals:
+                t = QTable(names = ["INDEX", "FAILURE", "WARNINGS", "EXIT_CODE", "RANK", "SEQ", "HDEN", "GRID_STR"],
+                          dtype=(np.int, np.bool, np.bool, '<U9', np.int, np.int, np.float, '<U9'))
+                str_to_bool = {"F":False, "T":True}
 
-            # read lines
-            for file in grd_files:
-                with open(file, "r") as f:
-                    lines = f.readlines()
-                    row = lines[-1].strip("\n").split("\t")
-                    row_input = [entry.strip(" ") if entry not in ["F", "T"] else str_to_bool[entry] for entry in row]
-                    t.add_row(row_input)
+                # read lines
+                for file in grd_files:
+                    with open(file, "r") as f:
+                        lines = f.readlines()
+                        row = lines[-1].strip("\n").split("\t")
+                        row_input = [entry.strip(" ") if entry not in ["F", "T"] else str_to_bool[entry] for entry in row]
+                        t.add_row(row_input)
 
-            t["DISTANCE"] = np.ones_like(t["HDEN"])*np.float64(fn_temp.split("_")[2])
+                t["DISTANCE"] = np.ones_like(t["HDEN"])*np.float64(fn_temp.split("_")[2])
+                t["STOP_COLN"] = np.ones_like(t["HDEN"])*np.float64(fn_temp.split("_")[4])
+
+            else:
+                t = QTable(names = ["INDEX", "FAILURE", "WARNINGS", "EXIT_CODE", "RANK", "SEQ", "HDEN", "METALS", "GRID_STR"],
+                          dtype=(np.int, np.bool, np.bool, '<U9', np.int, np.int, np.float, np.float, '<U9'))
+                str_to_bool = {"F":False, "T":True}
+
+                # read lines
+                for file in grd_files:
+                    with open(file, "r") as f:
+                        lines = f.readlines()
+                        row = lines[-1].strip("\n").split("\t")
+                        row_input = [entry.strip(" ") if entry not in ["F", "T"] else str_to_bool[entry] for entry in row]
+                        t.add_row(row_input)
+
+                t["DISTANCE"] = np.ones_like(t["HDEN"])*np.float64(fn_temp.split("_")[2])
+                t["STOP_COLN"] = np.ones_like(t["HDEN"])*np.float64(fn_temp.split("_")[4])
 
 
         # Get coldens
@@ -2280,8 +2514,270 @@ class CloudyModelMixin(object):
                 row = lines[-1].strip("\n").split("\t")
                 t2.add_row([np.float64(val)*u.cm**-2 for val in row])
 
+        out = hstack([t,t2])
+        return out
 
-        return hstack([t,t2])
+    def read_all_results(self, input_filenames = None, grid_hden = True, grid_metals = True):
+        if input_filenames == None:
+            input_filenames = glob.glob("distance*_input.in")
+
+        res = vstack([self.read_results(input_filename = fn, 
+                                      grid_hden = grid_hden, 
+                                      grid_metals = grid_metals) for fn in input_filenames])
+
+        self.cloudy_results = res
+        return res
+
+    def get_measured_coldens(self, data, flag = None):
+        """
+        Gets measured values from voigtfitting 
+
+        flag: flag to get measuremetns for, default to "MC"
+        """
+
+        flags = data.voigtfit_flags[self.source_name]["flags"]
+        fit_result_low = data.voigtfit[self.source_name]["LOW"].dataset.best_fit
+        fit_result_high = data.voigtfit[self.source_name]["HIGH"].dataset.best_fit
+        try:
+            fit_result_fuse = data.voigtfit[self.source_name]["FUSE"].dataset.best_fit
+        except KeyError:
+            fit_result_fuse = None
+
+        if flag == None:
+            flag = "MC"
+
+        meas = QTable(names = ["COMP", "V", "ERR_V", "B", "ERR_B", "N", "ERR_N", "LOWER_LIMIT", "BAD_WIDTH", "COMP_NUM"], 
+                      dtype = ["<U9", np.float64, np.float64, np.float64, np.float64, np.float64, np.float64, bool, bool, int], 
+                      units = [None, "km/s", "km/s", "km/s", "km/s", "cm**-2", "cm**-2", None, None, None])
+
+        def C_flag(flag_row):
+            if "S" in flag_row:
+                return True
+            else:
+                return False
+
+        def BB_flag(flag_row):
+            if "BB" in flag_row:
+                return True
+            else:
+                return False
+        for key in flags.keys():
+            if (flag in flags[key]) & ("B" not in flags[key]) & ("C" not in flags[key]):
+                try:
+                    row = [key,
+                           fit_result_low["z{}".format(key)].value * speed_of_light.to(u.km/u.s),
+                           fit_result_low["z{}".format(key)].stderr * speed_of_light.to(u.km/u.s),
+                           fit_result_low["b{}".format(key)].value * u.km/u.s, 
+                           fit_result_low["b{}".format(key)].stderr * u.km/u.s, 
+                           10**fit_result_low["logN{}".format(key)].value * u.cm**-2,
+                           10**fit_result_low["logN{}".format(key)].value * u.cm**-2 * fit_result_low["logN{}".format(key)].stderr * np.log(10),
+                           C_flag(flags[key]),
+                           BB_flag(flags[key]),
+                           int(flags[key][-1].split("c")[-1])]
+                except KeyError:
+                    try:
+                        row = [key,
+                               fit_result_high["z{}".format(key)].value * speed_of_light.to(u.km/u.s),
+                               fit_result_high["z{}".format(key)].stderr * speed_of_light.to(u.km/u.s),
+                               fit_result_high["b{}".format(key)].value * u.km/u.s, 
+                               fit_result_high["b{}".format(key)].stderr * u.km/u.s, 
+                               10**fit_result_high["logN{}".format(key)].value * u.cm**-2,
+                               10**fit_result_high["logN{}".format(key)].value * u.cm**-2 * fit_result_high["logN{}".format(key)].stderr * np.log(10),
+                               C_flag(flags[key]),
+                               BB_flag(flags[key]),
+                               int(flags[key][-1].split("c")[-1])
+                               ]
+                    except KeyError:
+                        row = [key,
+                               fit_result_fuse["z{}".format(key)].value * speed_of_light.to(u.km/u.s),
+                               fit_result_fuse["z{}".format(key)].stderr * speed_of_light.to(u.km/u.s),
+                               fit_result_fuse["b{}".format(key)].value * u.km/u.s, 
+                               fit_result_fuse["b{}".format(key)].stderr * u.km/u.s, 
+                               10**fit_result_fuse["logN{}".format(key)].value * u.cm**-2,
+                               10**fit_result_fuse["logN{}".format(key)].value * u.cm**-2 * fit_result_fuse["logN{}".format(key)].stderr * np.log(10),
+                               C_flag(flags[key]),
+                               BB_flag(flags[key]),
+                               int(flags[key][-1].split("c")[-1])
+                               ]
+                meas.add_row(row)
+
+        self.meas = meas
+        return meas
+
+    def plot_grid_results(self, stop_neutral_column_density, 
+                          cloudy_results = None,
+                          target_velocity = None, 
+                          velocity_tolerance = None,
+                          data = None,
+                          cmap = None, 
+                          norm = None, 
+                          ions = None,
+                          flag = None,
+                          figsize = None):
+        """
+        Plots grid results using specified stop column density and target velocity
+        
+        Parameters
+        ----------
+        stop_neutral_column_density: `number`
+            log of stop column density 
+        cloudy_results: `astropy.table.Table`, optional, must be keyword
+            Table of Cloudy Results, defaults to self.cloudy_results
+        target_velocity: `number`, optional, must be keyword
+            target velocity to search for component fit matches
+        velocity_tolerance: `number`, optional, must be keyword
+            tolerance range of velocity matches, defaults to 20 km/s
+        data: `dk_hst_tools.UVSpectra`, optional, must be keyword
+            data to get fit results from 
+        ions: `list-like`, optional, must be keyword
+            list of ions to plot
+        flag: `str`, optional, must be keyword
+            flag to get fit results for; default to MC
+        
+        """
+        
+        if cmap == None:
+            cmap = "viridis"
+        if norm == None:
+            norm = Normalize(vmin = 10, vmax = 90)
+        
+        sm = cm.ScalarMappable(cmap = cmap, norm = norm)
+        
+        if cloudy_results == None:
+            assert self.cloudy_results != None
+            
+        else:
+            self.cloudy_results = cloudy_results
+            
+        if ions == None:
+            ions = ["HI", "HII", "FeII", "SiII", "SiIII", "SiIV", "CII", "CIV"]
+            
+        
+        # check for stop coln match
+        mask = self.cloudy_results["STOP_COLN"] == stop_neutral_column_density
+        if np.sum(mask) == 0:
+            raise ValueError("stop column density provided not found in results!")
+            
+        # Identify fit result matches if needed
+        if (data is not None) & (target_velocity != None):
+            if not hasattr(target_velocity, "unit"):
+                target_velocity*= u.km/u.s
+            else:
+                target_velocity = target_velocity.to(u.km/u.s)
+            if velocity_tolerance == None:
+                velocity_tolerance = 20*u.km/u.s
+            if not hasattr(velocity_tolerance, "unit"):
+                velocity_tolerance*= u.km/u.s
+            else:
+                velocity_tolerance = velocity_tolerance.to(u.km/u.s)
+                
+            if flag == None:
+                flag = "MC"
+                
+            fit_results = self.get_measured_coldens(data, flag = flag)
+            true_values = []
+            lower_limit = []
+            for ion in ions:
+                row_mask = [comp.split("_")[-1] == ion for comp in fit_results["COMP"]]
+                if np.sum(row_mask) > 0:
+                    vel_mask = [(vel < (target_velocity + velocity_tolerance)) & 
+                                (vel > (target_velocity - velocity_tolerance)) for vel in fit_results[row_mask]["V"]]
+                    if np.sum(vel_mask) > 0:
+                        vel_best = np.argmin(np.abs(fit_results[row_mask][vel_mask]["V"] - target_velocity))
+                        true_values.append(np.log10([fit_results[row_mask][vel_mask][vel_best]["N"].value, 
+                                            fit_results[row_mask][vel_mask][vel_best]["ERR_N"].value]))
+                        lower_limit.append(fit_results[row_mask][vel_mask][vel_best]["LOWER_LIMIT"])
+                        
+                    else:
+                        true_values.append([np.nan, np.nan])
+                        lower_limit.append(False)
+                else:
+                    true_values.append([np.nan, np.nan])
+                    lower_limit.append(False)
+                        
+        distances = np.unique(self.cloudy_results["DISTANCE"])
+        
+        
+        if figsize == None:
+            figsize = (9,10)
+        fig,axs = plt.subplots(4,2, figsize = figsize)
+        
+        if true_values == None:
+            for ax,ion in zip(axs.flatten(), 
+                                    ["HI", "HII", "FeII", "SiII", "SiIII", "SiIV", "CII", "CIV"]):
+
+                for D in distances:
+                    color = sm.to_rgba(D)
+                    mask2 = self.cloudy_results["DISTANCE"] == D
+                    mask2 &= mask
+                    ax.plot(self.cloudy_results["HDEN"][mask2], 
+                            np.log10(self.cloudy_results[f"N_{ion}"][mask2].value), 
+                            color = color, lw = 2, alpha = 0.8, label = f"D = {D} kpc")
+                    ax.set_title(ion, fontsize = 12)
+
+                    xlim = ax.set_xlim(-3,0)
+                    
+        else:
+            for ax,ion,truth,ll in zip(axs.flatten(), 
+                                    ["HI", "HII", "FeII", "SiII", "SiIII", "SiIV", "CII", "CIV"], 
+                                    true_values, 
+                                       lower_limit):
+
+                for D in distances:
+                    color = sm.to_rgba(D)
+                    mask2 = self.cloudy_results["DISTANCE"] == D
+                    mask2 &= mask
+                    ax.plot(self.cloudy_results["HDEN"][mask2], 
+                            np.log10(self.cloudy_results[f"N_{ion}"][mask2].value), 
+                            color = color, lw = 2, alpha = 0.8, label = f"D = {D} kpc")
+                    
+                    xlim = ax.set_xlim(-3,0)
+                    
+                    if ion == "HI":
+                        ax.set_title(f"{ion}; Stop Column Density = {stop_neutral_column_density:.2f}", fontsize = 12)
+                        ax.hlines(stop_neutral_column_density, *xlim, color = 'r', lw = 2, ls = '--', alpha = 0.8)
+                    else:
+                        ax.set_title(ion, fontsize = 12)
+                        
+                    
+
+                    
+                    if not np.isnan(truth[0]):
+                        ax.hlines(truth[0], *xlim, color = 'r', lw = 2, ls = '--', alpha = 0.8)
+                        ax.fill_between(xlim, 
+                                        [truth[0] - truth[1], truth[0] - truth[1]],
+                                        [truth[0] + truth[1], truth[0] + truth[1]], 
+                                        color = "r", alpha = 0.05)
+                        if ll:
+                            ax.arrow(-2.5, truth[0], 0, 1.5, width = .005, color = "r", 
+                                     zorder = -1, alpha = 0.6, head_width = .05)
+                        
+            
+
+
+        lg = ax.legend()
+
+        for ax in axs[3,:]:
+            ax.set_xlabel(r"Hydrogen Density (cm$^{{-3}}$)", fontsize = 12)
+
+        for ax in axs[:,0]:
+            ax.set_ylabel(r"$\log_{{10}}$ (N / cm$^{{-2}}$)", fontsize = 12)
+
+        for ax in axs[:,1]:
+            ax.yaxis.tick_right()
+
+        plt.tight_layout()
+        
+        return fig
+            
+        
+        
+        
+        
+    
+    
+                
+
 
 
 

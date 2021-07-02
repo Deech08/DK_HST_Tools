@@ -2,7 +2,7 @@ import logging
 
 import numpy as np 
 from astropy import units as u 
-from astropy.table import Table 
+from astropy.table import Table, vstack
 from astropy.coordinates import SkyCoord, LSR
 from astropy.table.column import (BaseColumn, Column, MaskedColumn, _auto_names, FalseArray,
                      col_copy, _convert_sequence_data_to_array)
@@ -24,6 +24,17 @@ import VoigtFit
 import pickle
 
 from .JBH_IonizationModel import get_input_spectra
+
+from VoigtFit.output import rebin_spectrum, rebin_bool_array
+
+from matplotlib.widgets import Slider, Button, RadioButtons
+import matplotlib.pyplot as plt
+
+from matplotlib.colors import Normalize
+from matplotlib import cm as cmapper
+from matplotlib import cm
+
+import warnings
 
 directory = os.path.dirname(__file__)
 
@@ -116,14 +127,14 @@ def prepare_night_only_data(directory, output_filename = None):
             fs = np.vstack(fs)
             es = np.vstack(es)
             
-            f_avg = np.nanmean(fs, axis = 0)
-            e_avg = np.sqrt(np.nansum(es**2, axis = 0)/es.shape[1])
+            f_sum = np.nansum(fs, axis = 0)
+            e_sum = np.nansum(es, axis = 0)
         elif len(wls) == 1:
             return wls[0], fluxs[0], errs[0]
         else:
             return [0,],[0,],[0,]
             
-        return wl_master, f_avg, e_avg
+        return wl_master, f_sum, e_sum
 
     # Averaging all observations
     print("Averaging all observations if needed...")
@@ -183,7 +194,9 @@ class UVSpectra(UVSpectraMixin, Table):
         # Query basic info to store
         if query:
             if source_info is None:
-                self.source_info = Simbad.query_objects(np.unique(self.source_names))
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    self.source_info = vstack([Simbad.query_objects([sn]) for sn in self.source_names])
                 self.source_info["SOURCE"] = self.source_names
             else:
                 self.source_info = source_info
@@ -380,24 +393,33 @@ class UVSpectra(UVSpectraMixin, Table):
         # check for voigtfit data
 
         if voigtfit_files == None:
-            self.voigtfit_files = glob.glob(os.path.join(self.path,"*","*_VoigtFit_DK.hdf5"))
+            self.voigtfit_files = {"LOW":glob.glob(os.path.join(self.path,"*","*_VoigtFit_DK_vSeparate2_Low.hdf5")),
+                                   "HIGH":glob.glob(os.path.join(self.path,"*","*_VoigtFit_DK_vSeparate2_High.hdf5")),
+                                   "FUSE":glob.glob(os.path.join(self.path,"*","*_VoigtFit_DK_FUSE_OVI_v2.hdf5"))}
         else:
-            self.voigtfit_files = []
+            self.voigtfit_files = voigtfit_files
 
         if voigtfit == None:
             self.voigtfit = {}
-            if len(self.voigtfit_files) > 0:
-                for f in self.voigtfit_files:
-                    sn = f.split("/")[-1].split("_Voigt")[0]
-                    self.voigtfit[sn] = UVSpectraRaw(f, from_dataset = True)
+            if len(self.voigtfit_files["LOW"]) > 0:
+                for fl in self.voigtfit_files["LOW"]:
+                    sn = fl.split("/")[-1].split("_Voigt")[0]
+                    self.voigtfit[sn] = {"LOW":UVSpectraRaw(fl, from_dataset = True)}
+                for fh in self.voigtfit_files["HIGH"]:
+                    sn = fh.split("/")[-1].split("_Voigt")[0]
+                    self.voigtfit[sn]["HIGH"]=UVSpectraRaw(fh, from_dataset = True)
+                for ff in self.voigtfit_files["FUSE"]:
+                    sn = ff.split("/")[-1].split("_Voigt")[0]
+                    self.voigtfit[sn]["FUSE"]=UVSpectraRaw(ff, from_dataset = True)
+
 
         if voigtfit_flags == None:
             self.voigtfit_flags = {}
-            if len(self.voigtfit_files) > 0:
-                for f in self.voigtfit_files:
+            if len(self.voigtfit_files["LOW"]) > 0:
+                for f in self.voigtfit_files["LOW"]:
                     sn = f.split("/")[-1].split("_Voigt")[0]
                     fn = f.split("/")[:-1]
-                    with open("/{}/{}_VoigtFit_Flags_DK.pkl".format(os.path.join(*fn), sn), "rb") as file:
+                    with open("/{}/{}_VoigtFit_Flags_DK_vSeparate2_LowHigh.pkl".format(os.path.join(*fn), sn), "rb") as file:
                         self.voigtfit_flags[sn] = pickle.load(file)
 
 
@@ -494,17 +516,29 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                  velspan = None, 
                  rebin_n = None,
                  rebin_method = None, 
-                 query = True):
+                 query = True,
+                 filter_regions = True, 
+                 auto_resolution = True,
+                 pre_rebin = True, 
+                 manual_night_only_error = None, 
+                 use_DK_N = True, 
+                 shift_night_only_at_OI = None,
+                 shift_g160_at_1526 = None, 
+                 fuse_only = False):
 
         if not from_dataset:
             if filename.__class__ is str:
                 self.data_files = [filename]
             else:
                 self.data_files = filename
+
+            self.pre_rebin = pre_rebin
             
 
             if resolution == None:
                 self.resolution = 20. # COS
+            else:
+                self.resolution = resolution
 
             if name == None:
                 self.name = self.data_files[0].split("/")[-2]
@@ -535,10 +569,15 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             else:
                 self.rebin_n = rebin_n
 
+            if pre_rebin:
+                self.rebin_n = 1
+
             if rebin_method == None:
                 self.rebin_method = "mean"
             else:
                 self.rebin_method = rebin_method
+
+            self.auto_resolution = auto_resolution
 
             customSimbad = Simbad()
             customSimbad.add_votable_fields("rvz_radvel", "rvz_type")
@@ -568,9 +607,84 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             self.dataset.set_name(self.name)
 
 
+            
+            self.file_suffix = np.array([f.split("_spec-")[-1] for f in self.data_files])
+            if filter_regions:
+            
+                
+
+
+                if use_DK_N:
+
+                    self.filter_dict = {"G160M":np.where(self.file_suffix == "G160M")[0][0], 
+                             "G130M":np.where(self.file_suffix == "G130M")[0][0], 
+                             "G130M-N-DK":np.where(self.file_suffix == "G130M-N-DK")[0][0]}
+                    try:
+                        self.filter_dict["LIF1"] = np.where(self.file_suffix == "LIF1")[0][0]
+                    except IndexError:
+                        pass
+
+                    self.tag_file_pairs = {"OI_1302":"G130M-N-DK", 
+                                      "OI_1039":"LIF1", 
+                                      "SiII_1304":"G130M-N-DK",
+                                      "SiIV_1402":"G130M",
+                                      "SiIV_1393":"G130M",
+                                      "SiIII_1206":"G130M",
+                                      "SiII_1260":"G130M",
+                                      "SiII_1193":"G130M",
+                                      "SiII_1190":"G130M",
+                                      "CII_1334":"G130M",
+                                      "CIIa_1335.7":"G130M",
+                                      "CIIa_1335.71":"G130M",
+                                      "FeII_1144":"G130M",
+                                      "SII_1250":"G130M",
+                                      "SII_1253":"G130M",
+                                      "SII_1259":"G130M",
+                                      "NI_1200.7":"G130M",
+                                      "NI_1200":"G130M",
+                                      "NI_1199":"G130M"}
+
+                else:
+
+                    self.filter_dict = {"G160M":np.where(self.file_suffix == "G160M")[0][0], 
+                             "G130M":np.where(self.file_suffix == "G130M")[0][0], 
+                             "G130M-N":np.where(self.file_suffix == "G130M-N")[0][0]}
+                    try:
+                        self.filter_dict["LIF1"] = np.where(self.file_suffix == "LIF1")[0][0]
+                    except IndexError:
+                        pass
+
+                    self.tag_file_pairs = {"OI_1302":"G130M-N",  
+                                      "OI_1039":"LIF1", 
+                                      "SiII_1304":"G130M-N",
+                                      "SiIV_1402":"G130M",
+                                      "SiIV_1393":"G130M",
+                                      "SiIII_1206":"G130M",
+                                      "SiII_1260":"G130M",
+                                      "SiII_1193":"G130M",
+                                      "SiII_1190":"G130M",
+                                      "CII_1334":"G130M",
+                                      "CIIa_1335.7":"G130M",
+                                      "CIIa_1335.71":"G130M",
+                                      "FeII_1144":"G130M",
+                                      "SII_1250":"G130M",
+                                      "SII_1253":"G130M",
+                                      "SII_1259":"G130M",
+                                      "NI_1200.7":"G130M",
+                                      "NI_1200":"G130M",
+                                      "NI_1199":"G130M"}
+
+
+
             # read in data from text file
-            for file in self.data_files:
+            for suffix,file in zip(self.file_suffix, self.data_files):
                 print("Loading data from file, {}".format(file.split("/")[-1]))
+                if auto_resolution:
+                    if suffix == "G160M":
+                        self.resolution = 15.
+                        print("Setting G160M resolution to 15 km/s")
+                    else:
+                        self.resolution = 20.
                 try:
                     wav, flux, err, _,_, _,_, _,_ = np.loadtxt(file, unpack = True)
                 except ValueError:
@@ -578,16 +692,48 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                 mask = flux < 0
                 mask |= np.isnan(flux)
                 mask |= np.isinf(flux)
-                self.dataset.add_data(wav[~mask], flux[~mask], self.resolution, 
+                if (suffix == "G130M-N-DK") & (manual_night_only_error != None):
+                    err = manual_night_only_error * flux
+                if ((suffix == "G130M-N")|(suffix == "G130M-N-DK")) & (shift_night_only_at_OI != None):
+                    l0_ref = 1302.1680
+                    l_ref = l0_ref*(self.redshift+1)
+                    wav_shift = shift_night_only_at_OI / speed_of_light.to(u.km/u.s).value * l_ref
+                    wav += wav_shift
+                    print("shifting Night Only data by {}".format(wav_shift))
+                if (suffix == "G160M") & (shift_g160_at_1526 != None):
+                    l0_ref = 1526.7066
+                    l_ref = l0_ref*(self.redshift+1)
+                    wav_shift = shift_g160_at_1526 / speed_of_light.to(u.km/u.s).value * l_ref
+                    wav += wav_shift
+                    print("shifting G160M data by {}".format(wav_shift))
+                if pre_rebin:
+                    if suffix == "G160M":
+                        rebin_n = 3
+                    else:
+                        rebin_n = 5
+                    wl_r, spec_r, err_r = rebin_spectrum(wav[~mask], flux[~mask], err[~mask], 
+                                                         rebin_n, method = self.rebin_method)
+                    self.dataset.add_data(wl_r, spec_r, self.resolution, 
+                                      err = err_r, 
+                                      normalized = False)
+                else:
+                    self.dataset.add_data(wav[~mask], flux[~mask], self.resolution, 
                                       err = err[~mask], 
                                       normalized = False)
 
 
             # Add relevent lines to dataset
             for line in self.lines:
+                print(line)
                 self.dataset.add_line(line, velspan = self.velspan)
 
+
+            if filter_regions:
+                self.filter_regions()
+
         else:
+
+            self.pre_rebin = pre_rebin
             #loading from existing dataset
             self.data_files = [filename]
 
@@ -616,6 +762,10 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             else:
                 self.rebin_n = rebin_n
 
+            if self.pre_rebin:
+                self.rebin_n = 1
+                rebin_n = 1
+
             if rebin_method == None:
                 self.rebin_method = "mean"
             else:
@@ -640,6 +790,7 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             self.redshift_from_rv = -1*self.redshift_from_rv.decompose().value
 
             self.redshift = self.dataset.redshift
+
 
     def save_dataset(self, filename, in_same_folder = False):
         if not in_same_folder:
@@ -681,15 +832,17 @@ class CloudyModel(CloudyModelMixin, object):
         metalicity to use in log space relative to solar, default to -0.3
     """
     
-    def __init__(self, source_name, source_coord = None, source_info = None, 
+    def __init__(self, source_name, source_coord = None, 
+                 source_info = None, 
                  distance_grid_command = None, 
                  neutral_column_density_grid = None, 
+                 stop_OI_column = None,
                  spectra_template_filename = None, 
                  egb = None, 
                  egb_redshift = None, 
                  cosmic_rays_background = True,
                  species = None,
-                 metalicity = None,
+                 metalicity_grid_command = None,
                  hden_grid_command = None,):
 
         self.source_name = source_name
@@ -716,6 +869,8 @@ class CloudyModel(CloudyModelMixin, object):
 
         self.neutral_column_density_grid = neutral_column_density_grid
 
+        self.stop_OI_column = stop_OI_column
+
         if spectra_template_filename != None:
             self.spectra_template_filename = spectra_template_filename
         else:
@@ -735,18 +890,18 @@ class CloudyModel(CloudyModelMixin, object):
         self.cosmic_rays_background = cosmic_rays_background
 
         if species == None:
-            self.species = ["H", "H+", "Si+", "Si+2", "Si+3", "C+", "C+3", "Fe+"]
+            self.species = ["H", "H+", "Si+", "Si+2", "Si+3", "C+", "C+3", "Fe+", "Al+", "O"]
         else:
             self.species = species
 
 
-        if metalicity == None:
-            self.metalicity = -0.3
+        if metalicity_grid_command == None:
+            self.metalicity_grid_command = [-0.7,-0.1,0.2]
         else:
-            self.metalicity = metalicity
+            self.metalicity_grid_command = metalicity
 
         if hden_grid_command == None:
-            self.hden_grid_command = [-4,-1,0.5]
+            self.hden_grid_command = [-3,0,0.5]
         else:
             self.hden_grid_command = hden_grid_command
 
@@ -758,7 +913,8 @@ class CloudyModel(CloudyModelMixin, object):
         
 
 
-    def get_input_file(self, stop_neutral_column_density, distance = None, save = False):
+    def get_input_file(self, stop_neutral_column_density = None, distance = None, save = False, 
+                        grid_colden = False, grid_metals = True, stop_OI_column = None):
         """
         Returns string of input file as list for each line of file
         """ 
@@ -778,6 +934,10 @@ class CloudyModel(CloudyModelMixin, object):
         if not len(glob.glob(input_spectra_filename))>0:
             import shutil
             shutil.copy(self.spectra_template_filename, "./")
+
+        if stop_OI_column == None:
+            stop_OI_column = self.stop_OI_column
+
 
 
         file_lines = []
@@ -799,16 +959,24 @@ class CloudyModel(CloudyModelMixin, object):
 
         file_lines.append('constant density')
         file_lines.append('# Metalcity')
-        file_lines.append(f'metals {self.metalicity} log')
+        if grid_metals:
+            file_lines.append('metals -0.3 log vary')
+            file_lines.append('grid {} {} {}'.format(*self.metalicity_grid_command))
+        else:
+            file_lines.append(f'metals {self.metalicity_grid_command} log')
         file_lines.append('# Stop condition')
-        file_lines.append(f'stop netural column density {stop_neutral_column_density}')
+        if stop_OI_column == None:
+            file_lines.append(f'stop neutral column density {stop_neutral_column_density}')
+            stop_val = stop_neutral_column_density
+        else:
+            file_lines.append(f'stop column density "O" {stop_OI_column}')
+            stop_val = stop_OI_column
+        
 
         file_lines.append('double optical depths')
         file_lines.append('iterate to convergence')
-        file_lines.append('save grid separate "distance_kpc_{0:.1f}_stopNHI_{1}_gridrun.grd"'.format(distance.value, 
-                                                            stop_neutral_column_density))
-        file_lines.append('save species column densities last separate "distance_kpc_{0:.1f}_stopNHI_{1}_colden.col" no hash'.format(distance.value, 
-                                                            stop_neutral_column_density))
+        file_lines.append('save grid separate "distance_kpc_{0:.1f}_stop_{1:.2f}_gridrun.grd"'.format(distance.value, stop_val))
+        file_lines.append('save species column densities last separate "distance_kpc_{0:.1f}_stop_{1:.2f}_colden.col" no hash'.format(distance.value, stop_val))
         for species in self.species:
             file_lines.append(f'"{species}"')
 
@@ -818,13 +986,11 @@ class CloudyModel(CloudyModelMixin, object):
 
         if save:
 
-            with open('distance_kpc_{0:.1f}_stopNHI_{1}_input.in'.format(distance.value, 
-                                                                stop_neutral_column_density), 'w') as f:
+            with open('distance_kpc_{0:.1f}_stop_{1:.2f}_input.in'.format(distance.value, stop_val), 'w') as f:
                 for line in file_lines:
                     print(line, file = f)
 
-            self.input_filename = 'distance_kpc_{0:.1f}_stopNHI_{1}_input.in'.format(distance.value, 
-                                                                stop_neutral_column_density)
+            self.input_filename = 'distance_kpc_{0:.1f}_stop_{1:.2f}_input.in'.format(distance.value, stop_val)
 
         return file_lines
 
@@ -835,13 +1001,390 @@ class CloudyModel(CloudyModelMixin, object):
 
 
 
+    def grid_viewer(self, data, meas = None,
+                    figsize = None, 
+                    cloudy_results = None,
+                    ions = None, 
+                    cmap = None, 
+                    vel_range = None,
+                    ):
+        return CloudyGridViewer(cloudy = self, data = data, 
+                                figsize = figsize, 
+                                cloudy_results = cloudy_results, 
+                                ions = ions, 
+                                cmap = cmap, 
+                                vel_range = vel_range, 
+                                meas = meas)
 
 
 
 
 
 
+class CloudyGridViewer(object):
+    
+    def __init__(self, cloudy = None,
+                       data = None, 
+                       figsize = None, 
+                       cloudy_results = None, 
+                       ions = None,  
+                       cmap = None, 
+                 vel_range = None,
+                 meas = None):
+        """
+        Interactive plot of cloudy results with slides to control the plotted distances, stop_colN, or METALS
+        """
 
+        if ions == None:
+            self.ions = ["HI", "HII", "OI", "FeII", "AlII", "SiII", "SiIII", "SiIV", "CII", "CIV"]
+        else:
+            self.ions = ions
+
+        if figsize == None:
+            figsize = (8.5,11)
+
+        if cloudy_results == None:
+            assert cloudy.cloudy_results != None
+            self.cloudy_results = cloudy.cloudy_results
+        else:
+            self.cloudy_results = cloudy_results
+
+        if cmap == None:
+            self.cmap = "plasma"
+        else:
+            self.cmap = cmap
+            
+        if vel_range == None:
+            self.vel_min = -200
+            self.vel_max = 600
+        else:
+            self.vel_min = vel_range[0]
+            self.vel_max = vel_range[1]
+            
+        if meas == None:
+            self.meas = cloudy.meas  
+        else:
+            self.meas = meas  
+        self.data = data
+        self.cloudy = cloudy
+
+
+        # set default values
+        self.distance_0 = np.sort(self.cloudy_results["DISTANCE"])[(int(len(self.cloudy_results)/2))]
+        self.stop_coln_0 = np.sort(self.cloudy_results["STOP_COLN"])[(int(len(self.cloudy_results)/2))]
+        self.metals_0 = np.sort(self.cloudy_results["METALS"])[(int(len(self.cloudy_results)/2))]
+
+        self.delta_distance = np.diff(np.unique(self.cloudy_results["DISTANCE"]))[0]
+        self.delta_stop_coln = np.diff(np.unique(self.cloudy_results["STOP_COLN"]))[0]
+        self.delta_metals = np.diff(np.unique(self.cloudy_results["METALS"]))[0]
+
+
+
+        self.fig, self.axs = plt.subplots(5,2, figsize = figsize)
+
+        plt.subplots_adjust(left = 0.25, top = 0.94, bottom = 0.2, right = .94,
+                            hspace = 0.5, wspace = .12)
+
+        
+
+        self.grid_data = {"DISTANCE":np.unique(self.cloudy_results["DISTANCE"]),
+                     "STOP_COLN":np.unique(self.cloudy_results["STOP_COLN"]),
+                     "METALS":np.unique(self.cloudy_results["METALS"])}
+        
+        self.as_cmap = "DISTANCE"
+        self.norm = {"DISTANCE":Normalize(vmin = np.min(self.grid_data["DISTANCE"])-5., 
+                                          vmax = np.max(self.grid_data["DISTANCE"])+5.),
+                "STOP_COLN":Normalize(vmin = np.min(self.grid_data["STOP_COLN"])-.5, 
+                                          vmax = np.max(self.grid_data["STOP_COLN"])+.5),
+                "METALS":Normalize(vmin = np.min(self.grid_data["METALS"])-.2, 
+                                          vmax = np.max(self.grid_data["METALS"])+.2)}
+
+        self.sm = cm.ScalarMappable(cmap = self.cmap, norm = self.norm[self.as_cmap])
+
+        self.xlim = (np.min(self.cloudy_results["HDEN"]), np.max(self.cloudy_results["HDEN"]))
+
+        self.max_lines = np.max([len(self.grid_data["DISTANCE"]),
+                            len(self.grid_data["STOP_COLN"]),
+                            len(self.grid_data["METALS"])])
+
+        #initial lines
+        self.lines_list = []
+        for ax,ion in zip(self.axs.flatten(), self.ions):
+            lines = []
+            nlines = 0
+            for val in self.grid_data[self.as_cmap]:
+                nlines +=1
+                color = self.sm.to_rgba(val)
+                mask = self.cloudy_results[self.as_cmap] == val
+                if self.as_cmap == "DISTANCE":
+                    mask &= self.cloudy_results["STOP_COLN"] == self.stop_coln_0
+                    mask &= self.cloudy_results["METALS"] == self.metals_0
+                elif self.as_cmap == "STOP_COLN":
+                    mask &= self.cloudy_results["DISTANCE"] == self.distance_0
+                    mask &= self.cloudy_results["METALS"] == self.metals_0
+                else:
+                    mask &= self.cloudy_results["DISTANCE"] == self.distance_0
+                    mask &= self.cloudy_results["STOP_COLN"] == self.stop_coln_0
+
+                yy = np.ma.masked_array(data = self.cloudy_results[f"N_{ion}"][mask].value, 
+                                        mask = self.cloudy_results[f"N_{ion}"][mask].value <= 0.)
+                yy = np.ma.log10(yy)
+                l, = ax.plot(self.cloudy_results["HDEN"][mask], 
+                                yy, 
+                                color = self.sm.to_rgba(val), lw = 2, alpha = 0.8,
+                             label = val)
+                ax.set_xlim(self.xlim)
+                ax.set_title(ion, fontsize = 12)
+                lines.append(l)
+
+            while nlines < self.max_lines:
+                l, = ax.plot(self.cloudy_results["HDEN"][mask], yy, lw = 2, alpha = 0.0)
+                lines.append(l)
+                nlines+=1
+
+            self.lines_list.append(lines)
+        
+        handles, labels = self.axs.flatten()[0].get_legend_handles_labels()
+        self.lg = self.fig.legend(handles, labels, loc='upper center', ncol = 8)
+        
+        self.title = self.fig.suptitle(self.cloudy.source_name, x = 0.1, y = 0.83, fontweight = "bold")
+        
+        self.axs[-1][0].set_xlabel(r"$\log_{10}(n_H)$", fontsize = 12)
+        self.axs[-1][1].set_xlabel(r"$\log_{10}(n_H)$", fontsize = 12)
+        for ax in self.axs[:,0]:
+            ax.set_ylabel(r"$\log_{10}(N)$", fontsize = 12)
+        for ax in self.axs[:,1]:
+            ax.yaxis.tick_right()
+
+        def plot_result(as_cmap, distance = self.distance_0, stop_coln = self.stop_coln_0, metals = self.metals_0):
+            for lines,ion in zip(self.lines_list, self.ions):
+
+                for val,l in zip(self.grid_data[self.as_cmap],lines[:len(self.grid_data[self.as_cmap])]):
+                    color = self.sm.to_rgba(val)
+                    mask = self.cloudy_results[self.as_cmap] == val
+                    if as_cmap == "DISTANCE":
+                        mask &= self.cloudy_results["STOP_COLN"] < stop_coln + self.delta_stop_coln/2
+                        mask &= self.cloudy_results["STOP_COLN"] > stop_coln - self.delta_stop_coln/2
+                        mask &= self.cloudy_results["METALS"] < metals + self.delta_metals/2
+                        mask &= self.cloudy_results["METALS"] > metals - self.delta_metals/2
+                    elif as_cmap == "STOP_COLN":
+                        mask &= self.cloudy_results["DISTANCE"] < distance + self.delta_distance/2
+                        mask &= self.cloudy_results["DISTANCE"] > distance - self.delta_distance/2
+                        mask &= self.cloudy_results["METALS"] < metals + self.delta_metals/2
+                        mask &= self.cloudy_results["METALS"] > metals - self.delta_metals/2
+                    else:
+                        mask &= self.cloudy_results["DISTANCE"] < distance + self.delta_distance/2
+                        mask &= self.cloudy_results["DISTANCE"] > distance - self.delta_distance/2
+                        mask &= self.cloudy_results["STOP_COLN"] < stop_coln + self.delta_stop_coln/2
+                        mask &= self.cloudy_results["STOP_COLN"] > stop_coln - self.delta_stop_coln/2
+
+                    yy = np.ma.masked_array(data = self.cloudy_results[f"N_{ion}"][mask].value, 
+                                        mask = self.cloudy_results[f"N_{ion}"][mask].value <= 0.)
+                    yy = np.ma.log10(yy)
+                    self.yy = yy
+                    l.set_ydata(yy)
+                    l.set_alpha(0.8)
+                    l.set_color(color)
+                    l.set_label(val)
+
+                for l in lines[len(self.grid_data[self.as_cmap]):]:
+                    l.set_alpha(0.0)
+                    l.set_label(None)
+                    
+                    
+            for ax in self.axs.flatten():
+                ax.relim()
+                ax.autoscale_view()
+                ax.set_xlim(self.xlim)
+            self.lg.remove()
+            handles, labels = self.axs.flatten()[0].get_legend_handles_labels()
+            self.lg = self.fig.legend(handles, labels, loc='upper center', ncol = 8)
+
+
+        self.axcolor = 'lightgoldenrodyellow'
+        self.axdist = plt.axes([0.02, 0.2, 0.02, 0.57], facecolor=self.axcolor)
+        self.axcoln = plt.axes([0.08, 0.2, 0.02, 0.57], facecolor=self.axcolor)
+        self.axmetal = plt.axes([0.14, 0.2, 0.02, 0.57], facecolor=self.axcolor)
+
+        self.sdist = Slider(self.axdist, 'D', 
+                       np.min(self.grid_data["DISTANCE"]), 
+                       np.max(self.grid_data["DISTANCE"]), 
+                       valinit=self.distance_0, 
+                       valstep=self.delta_distance, 
+                       orientation = "vertical")
+
+        self.smetal = Slider(self.axmetal, 'Z', 
+                       np.min(self.grid_data["METALS"]), 
+                       np.max(self.grid_data["METALS"]), 
+                       valinit=self.metals_0, 
+                       valstep=self.delta_metals, 
+                       orientation = "vertical")
+
+        self.scoln = Slider(self.axcoln, 'N', 
+                       np.min(self.grid_data["STOP_COLN"]), 
+                       np.max(self.grid_data["STOP_COLN"]), 
+                       valinit=self.stop_coln_0, 
+                       valstep=self.delta_stop_coln, 
+                       orientation = "vertical")
+
+        self.rax = plt.axes([0.015, 0.85, 0.14, 0.1], facecolor=self.axcolor)
+        self.radio = RadioButtons(self.rax, ('DISTANCE', 'STOP_COLN', 'METALS'), active=0)
+
+        
+        
+        self.axvw = plt.axes([.18, .02, .02, .13], facecolor = self.axcolor)
+        self.svw = Slider(self.axvw, r"$\Delta v$", 
+                          5., 40., valinit = 15., orientation = "vertical", valstep = 0.25)
+        
+        self.rabs_ax = plt.axes([0.02,0.02, .15, .13], facecolor = self.axcolor)
+        self.radio_abs = RadioButtons(self.rabs_ax, (r"OI $\lambda$1302", 
+                                                     r"AlII $\lambda$1670",
+                                                     r"SiII $\lambda$1190", 
+                                                     r"SiIII $\lambda$1206",
+                                                     r"SiIV $\lambda$1393",
+                                                     r"CIV $\lambda$1548"), active = 0)
+        
+        self.axvcen = plt.axes([.25, .01, .69, .015], facecolor = self.axcolor)
+        self.svcen = Slider(self.axvcen, r"$v$",
+                            self.vel_min, self.vel_max, valinit = 250., valstep = 1.)
+        
+        self.axabs = plt.axes([.25, .05, .69, .1])
+        self.axabs.set_xlim(self.vel_min,self.vel_max)
+        self.axabs.yaxis.set_label_position("right")
+        
+        #init spectra
+        self.line_to_tag = {r"OI $\lambda$1302":"OI_1302", 
+                            r"AlII $\lambda$1670":"AlII_1670",
+                            r"SiII $\lambda$1190":"SiII_1190",
+                            r"SiIII $\lambda$1206":"SiIII_1206",
+                            r"SiIV $\lambda$1393":"SiIV_1393",
+                            r"CIV $\lambda$1548":"CIV_1548"}
+                
+        
+        def plot_spec(line_label = self.radio_abs.value_selected):
+            # Find the right region
+            self.axabs.clear()
+            line_label = self.radio_abs.value_selected
+            for ell,region in enumerate(self.data.voigtfit[self.cloudy.source_name]["LOW"].dataset.regions):
+                for sub_ind,line in enumerate(region.lines):
+                    if self.line_to_tag[line_label] == line.tag:
+                        self.data.voigtfit[self.cloudy.source_name]["LOW"].plot_region_fit(ell, 
+                                                                                    sub_region_ind = sub_ind, 
+                                                                                    vel_range = [self.vel_min, 
+                                                                                                 self.vel_max],
+                                                                                    ax = self.axabs, 
+                                                                                    labelx = False, 
+                                                                                    labely = False, 
+                                                                                    lw = 1, 
+                                                                                    alpha = 0.8, 
+                                                                                    fit_kwargs = {"lw":1, 
+                                                                                                  "alpha":0.8},
+                                                                                    comp_kwargs = {"lw":2},
+                                                                                    comp_scale = 0.2, 
+                                                                                    plot_indiv_comps = True,
+                                                                                           ylabel_as_ion = True)
+            for ell,region in enumerate(self.data.voigtfit[self.cloudy.source_name]["HIGH"].dataset.regions):
+                for sub_ind,line in enumerate(region.lines):
+                    if self.line_to_tag[line_label] == line.tag:
+                        self.data.voigtfit[self.cloudy.source_name]["HIGH"].plot_region_fit(ell, 
+                                                                                    sub_region_ind = sub_ind, 
+                                                                                    vel_range = [self.vel_min, 
+                                                                                                 self.vel_max],
+                                                                                    ax = self.axabs, 
+                                                                                    labelx = False, 
+                                                                                    labely = False, 
+                                                                                    lw = 1, 
+                                                                                    alpha = 0.8, 
+                                                                                    fit_kwargs = {"lw":1, 
+                                                                                                  "alpha":0.8},
+                                                                                    comp_kwargs = {"lw":2},
+                                                                                    comp_scale = 0.3, 
+                                                                                    plot_indiv_comps = True, 
+                                                                                            ylabel_as_ion = True)
+                        
+            self.axabs.set_ylabel("Normalized\nFlux", fontsize = 12)
+            # add vel markers
+            ylim = self.axabs.get_ylim()
+            self.axabs.plot([self.svcen.val, self.svcen.val], ylim, color = "k", ls = ":", 
+                            lw = 2, alpha = 0.5, zorder = -1)
+            self.axabs.fill_between([self.svcen.val - self.svw.val, self.svcen.val + self.svw.val], 
+                                    [ylim[0], ylim[0]], 
+                                    [ylim[1], ylim[1]], color = "k", alpha = 0.04, zorder = -1)
+            
+        
+                        
+        plot_spec(self.radio_abs.value_selected)
+        
+        
+        
+        #init lines
+        self.meas_lines = []
+        for ion,ax in zip(self.ions, self.axs.flatten()):
+            l0, = ax.plot(self.xlim,[12,12],lw = 2, color = "k", ls = "--", alpha = 0., zorder = -1)
+            
+            l1, = ax.plot(self.xlim,[12,12],lw = 2, color = "k", ls = ":", alpha = 0., zorder = -1)
+            
+            l2, = ax.plot(self.xlim,[12,12],lw = 2, color = "k", ls = ":", alpha = 0., zorder = -1)
+            
+            self.meas_lines.append([l0,l1,l2])
+        
+        def add_obs_lines():
+            for ion,lines in zip(self.ions, self.meas_lines):
+                #check for matching component
+                vel_mask = self.meas["V"].value <= (self.svcen.val + self.svw.val)
+                vel_mask &= self.meas["V"].value >= (self.svcen.val - self.svw.val)
+                ion_mask = [comp.split("_")[-1] == ion for comp in self.meas["COMP"]]
+                mask = vel_mask & ion_mask
+                if np.sum(mask)>0:
+                    res_N = np.log10(self.meas["N"].value)[mask]
+                    res_err_N = np.log10(self.meas["ERR_N"].value)[mask]
+
+                    res_v = self.meas["V"].value[mask]
+
+                    # check for multiple
+                    if len(res_v) > 1:
+                        use_ind = np.argmin(np.abs(res_v - self.svcen.val))
+                        res_v = res_v[use_ind]
+                        res_N = res_N[use_ind]
+                        res_err_N = res_err_N[use_ind]
+                    if np.isinf(res_err_N):
+                        res_err_N = 0.
+                    
+                    lines[0].set_ydata([res_N, res_N])
+                    lines[1].set_ydata([res_N-res_err_N, res_N-res_err_N])
+                    lines[2].set_ydata([res_N+res_err_N, res_N+res_err_N])
+                    
+                    lines[0].set_alpha(0.7)
+                    lines[1].set_alpha(0.7)
+                    lines[2].set_alpha(0.7)
+                else:
+                    lines[0].set_alpha(0.)
+                    lines[1].set_alpha(0.)
+                    lines[2].set_alpha(0.)
+                    
+        def update_cmap_parameter(label):
+            self.as_cmap = label
+            self.sm = cm.ScalarMappable(cmap = self.cmap, norm = self.norm[self.as_cmap])
+            plot_result(self.as_cmap, distance = self.sdist.val, stop_coln = self.scoln.val, metals = self.smetal.val)
+            add_obs_lines()
+            plot_spec()
+            self.fig.canvas.draw_idle()
+        self.radio.on_clicked(update_cmap_parameter)
+
+        def update(val):
+            plot_result(self.as_cmap, distance = self.sdist.val, stop_coln = self.scoln.val, metals = self.smetal.val)
+            add_obs_lines()
+            plot_spec()
+            self.fig.canvas.draw_idle()
+        self.sdist.on_changed(update)
+        self.smetal.on_changed(update)
+        self.scoln.on_changed(update)
+        
+        self.radio_abs.on_clicked(update)
+        self.svw.on_changed(update)
+        self.svcen.on_changed(update)
+                
+    
 
 
 
