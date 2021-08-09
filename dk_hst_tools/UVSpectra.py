@@ -772,8 +772,9 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                 self.rebin_method = rebin_method
 
             customSimbad = Simbad()
-            customSimbad.add_votable_fields("rvz_radvel", "rvz_type")
+            # customSimbad.add_votable_fields("rvz_radvel", "rvz_type")
 
+            # print(f"getting Simbad Query for {self.name}")
             self.source_info = customSimbad.query_object(self.name)
 
             self.SkyCoord_at_LMC = SkyCoord(ra = self.source_info["RA"][0], 
