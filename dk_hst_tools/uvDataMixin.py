@@ -24,7 +24,7 @@ from .sbiKit import sbiKit
 
 from lmfit import Parameters
 
-from VoigtFit.output import rebin_spectrum, rebin_bool_array
+from VoigtFit.io.output import rebin_spectrum, rebin_bool_array
 
 
 
@@ -81,7 +81,7 @@ class UVSpectraMixin(object):
             distance *= u.kpc
             logging.warning("No units provided for distance, assuming kpc!")
 
-        return np.tan(self.LMC_coords.separation(coords)) * distance
+        return np.sin(self.LMC_coords.separation(coords)) * distance
 
     def get_LMC_mccorrelation(self, 
                               ion, 
@@ -1223,8 +1223,8 @@ class UVSpectraMixin(object):
         vel_arr: `list_like`, optional, must be keyword
             array of velocities to compute spectrum to
         """
-        from VoigtFit.lines import show_transitions
-        from VoigtFit.voigt import Voigt, convolve_numba
+        from VoigtFit.container.lines import show_transitions
+        from VoigtFit.funcs.voigt import Voigt, convolve_numba
         from scipy.signal import fftconvolve, gaussian
 
         # find the right transition
@@ -1527,8 +1527,8 @@ class UVSpectraRawMixin(object):
         vel_arr: `list_like`, optional, must be keyword
             array of velocities to compute spectrum to
         """
-        from VoigtFit.lines import show_transitions
-        from VoigtFit.voigt import Voigt, convolve_numba
+        from VoigtFit.container.lines import show_transitions
+        from VoigtFit.funcs.voigt import Voigt, convolve_numba
         from scipy.signal import fftconvolve, gaussian
 
         # find the right transition
@@ -2528,13 +2528,13 @@ class CloudyModelMixin(object):
         self.cloudy_results = res
         return res
 
-    def get_measured_coldens(self, data, flag = None):
+    def get_measured_coldens(self, data, flag = None, ignore_BB_flag = True):
         """
         Gets measured values from voigtfitting 
 
-        flag: flag to get measuremetns for, default to "MC"
+        flag: flag to get measuremetns for, default to "MS"
         """
-
+        redshift = data.voigtfit[self.source_name]["LOW"].dataset.redshift
         flags = data.voigtfit_flags[self.source_name]["flags"]
         fit_result_low = data.voigtfit[self.source_name]["LOW"].dataset.best_fit
         fit_result_high = data.voigtfit[self.source_name]["HIGH"].dataset.best_fit
@@ -2544,7 +2544,7 @@ class CloudyModelMixin(object):
             fit_result_fuse = None
 
         if flag == None:
-            flag = "MC"
+            flag = ["MS", "MSys"]
 
         meas = QTable(names = ["COMP", "V", "ERR_V", "B", "ERR_B", "N", "ERR_N", "LOWER_LIMIT", "BAD_WIDTH", "COMP_NUM"], 
                       dtype = ["<U9", np.float64, np.float64, np.float64, np.float64, np.float64, np.float64, bool, bool, int], 
@@ -2562,10 +2562,10 @@ class CloudyModelMixin(object):
             else:
                 return False
         for key in flags.keys():
-            if (flag in flags[key]) & ("B" not in flags[key]) & ("C" not in flags[key]):
+            if (np.any([f in flags[key] for f in flag])) & ("B" not in flags[key]) & ("C" not in flags[key]):
                 try:
                     row = [key,
-                           fit_result_low["z{}".format(key)].value * speed_of_light.to(u.km/u.s),
+                           (fit_result_low["z{}".format(key)].value - redshift) * speed_of_light.to(u.km/u.s),
                            fit_result_low["z{}".format(key)].stderr * speed_of_light.to(u.km/u.s),
                            fit_result_low["b{}".format(key)].value * u.km/u.s, 
                            fit_result_low["b{}".format(key)].stderr * u.km/u.s, 
@@ -2577,7 +2577,7 @@ class CloudyModelMixin(object):
                 except KeyError:
                     try:
                         row = [key,
-                               fit_result_high["z{}".format(key)].value * speed_of_light.to(u.km/u.s),
+                               (fit_result_high["z{}".format(key)].value - redshift) * speed_of_light.to(u.km/u.s),
                                fit_result_high["z{}".format(key)].stderr * speed_of_light.to(u.km/u.s),
                                fit_result_high["b{}".format(key)].value * u.km/u.s, 
                                fit_result_high["b{}".format(key)].stderr * u.km/u.s, 
@@ -2589,7 +2589,7 @@ class CloudyModelMixin(object):
                                ]
                     except KeyError:
                         row = [key,
-                               fit_result_fuse["z{}".format(key)].value * speed_of_light.to(u.km/u.s),
+                               (fit_result_fuse["z{}".format(key)].value - redshift) * speed_of_light.to(u.km/u.s),
                                fit_result_fuse["z{}".format(key)].stderr * speed_of_light.to(u.km/u.s),
                                fit_result_fuse["b{}".format(key)].value * u.km/u.s, 
                                fit_result_fuse["b{}".format(key)].stderr * u.km/u.s, 

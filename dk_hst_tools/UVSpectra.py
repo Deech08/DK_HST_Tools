@@ -25,7 +25,7 @@ import pickle
 
 from .JBH_IonizationModel import get_input_spectra
 
-from VoigtFit.output import rebin_spectrum, rebin_bool_array
+from VoigtFit.io.output import rebin_spectrum, rebin_bool_array
 
 from matplotlib.widgets import Slider, Button, RadioButtons
 import matplotlib.pyplot as plt
@@ -582,7 +582,11 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             customSimbad = Simbad()
             customSimbad.add_votable_fields("rvz_radvel", "rvz_type")
 
-            self.source_info = customSimbad.query_object(self.name)
+            try:
+                self.source_info = customSimbad.query_object(self.name)
+            except:
+                self.source_info = Simbad.query_object(self.name)
+
 
             self.SkyCoord_at_LMC = SkyCoord(ra = self.source_info["RA"][0], 
                         dec = self.source_info["DEC"][0], 
