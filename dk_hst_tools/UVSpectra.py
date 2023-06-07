@@ -616,13 +616,24 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             if filter_regions:
             
                 
-
-
+                self.filter_dict = {}
                 if use_DK_N:
 
-                    self.filter_dict = {"G160M":np.where(self.file_suffix == "G160M")[0][0], 
-                             "G130M":np.where(self.file_suffix == "G130M")[0][0], 
-                             "G130M-N-DK":np.where(self.file_suffix == "G130M-N-DK")[0][0]}
+                    try:
+                        self.filter_dict["G160M"] = np.where(self.file_suffix == "G160M")[0][0]
+                    except IndexError:
+                        pass
+
+                    try:
+                        self.filter_dict["G130M"] = np.where(self.file_suffix == "G130M")[0][0]
+                    except IndexError:
+                        pass
+
+                    try:
+                        self.filter_dict["G130M-N-DK"] = np.where(self.file_suffix == "G130M-N-DK")[0][0]
+                    except IndexError:
+                        pass
+                    
                     try:
                         self.filter_dict["LIF1"] = np.where(self.file_suffix == "LIF1")[0][0]
                     except IndexError:
@@ -650,13 +661,25 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
 
                 else:
 
-                    self.filter_dict = {"G160M":np.where(self.file_suffix == "G160M")[0][0], 
-                             "G130M":np.where(self.file_suffix == "G130M")[0][0], 
-                             "G130M-N":np.where(self.file_suffix == "G130M-N")[0][0]}
+                    try:
+                        self.filter_dict["G160M"] = np.where(self.file_suffix == "G160M")[0][0]
+                    except IndexError:
+                        pass
+                        
+                    try:
+                        self.filter_dict["G130M"] = np.where(self.file_suffix == "G130M")[0][0]
+                    except IndexError:
+                        pass
+
+                    try:
+                        self.filter_dict["G130M-N-DK"] = np.where(self.file_suffix == "G130M-N-DK")[0][0]
+                    except IndexError:
+                        pass
+                    
                     try:
                         self.filter_dict["LIF1"] = np.where(self.file_suffix == "LIF1")[0][0]
                     except IndexError:
-                        pass
+                        pass 
 
                     self.tag_file_pairs = {"OI_1302":"G130M-N",  
                                       "OI_1039":"LIF1", 

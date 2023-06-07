@@ -1528,7 +1528,7 @@ class UVSpectraRawMixin(object):
             array of velocities to compute spectrum to
         """
         from VoigtFit.container.lines import show_transitions
-        from VoigtFit.funcs.voigt import Voigt, convolve_numba
+        from VoigtFit.funcs.voigt import Voigt, convolve
         from scipy.signal import fftconvolve, gaussian
 
         # find the right transition
