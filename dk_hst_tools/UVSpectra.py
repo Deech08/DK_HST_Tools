@@ -672,7 +672,7 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                         pass
 
                     try:
-                        self.filter_dict["G130M-N-DK"] = np.where(self.file_suffix == "G130M-N-DK")[0][0]
+                        self.filter_dict["G130M-N"] = np.where(self.file_suffix == "G130M-N")[0][0]
                     except IndexError:
                         pass
                     
