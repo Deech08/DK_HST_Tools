@@ -533,6 +533,8 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                 self.data_files = filename
 
             self.pre_rebin = pre_rebin
+
+            self.filetypes = [fname.split("/")[-1].split(".")[-1] for fname in self.data_files]
             
 
             if resolution == None:
@@ -541,7 +543,10 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                 self.resolution = resolution
 
             if name == None:
-                self.name = self.data_files[0].split("/")[-2]
+                if self.filetypes[0]=="fits":
+                    self.name = self.data_files[0].split("hst_cos_")[-1].split("_")[0]
+                else:
+                    self.name = self.data_files[0].split("/")[-2]
             else:
                 self.name = name
 
@@ -612,7 +617,8 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
 
 
             
-            self.file_suffix = np.array([f.split("_spec-")[-1] for f in self.data_files])
+            self.file_suffix = np.array([f.split("{}_".format(self.name))[-1].split("_")[0].upper() if ft == "fits" 
+                                         else f.split("_spec-")[-1] for f,ft in zip(self.data_files, self.filetypes)])
             if filter_regions:
             
                 
@@ -704,18 +710,28 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
 
 
             # read in data from text file
-            for suffix,file in zip(self.file_suffix, self.data_files):
+            for suffix,file,filetype in zip(self.file_suffix, self.data_files, self.filetypes):
                 print("Loading data from file, {}".format(file.split("/")[-1]))
+
                 if auto_resolution:
                     if suffix == "G160M":
                         self.resolution = 15.
                         print("Setting G160M resolution to 15 km/s")
                     else:
                         self.resolution = 20.
-                try:
-                    wav, flux, err, _,_, _,_, _,_ = np.loadtxt(file, unpack = True)
-                except ValueError:
-                    wav, flux, err = np.loadtxt(file, unpack = True)
+
+                if filetype == "fits":
+                    tmp_table = Table.read(file)
+                    wav = tmp_table["WAVELENGTH"].T.data
+                    flux = tmp_table["FLUX"].T.data
+                    err = tmp_table["ERROR"].T.data
+
+                else:
+                    try:
+                        wav, flux, err, _,_, _,_, _,_ = np.loadtxt(file, unpack = True)
+                    except ValueError:
+                        wav, flux, err = np.loadtxt(file, unpack = True)
+
                 mask = flux < 0
                 mask |= np.isnan(flux)
                 mask |= np.isinf(flux)
