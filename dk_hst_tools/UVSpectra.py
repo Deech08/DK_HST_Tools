@@ -721,7 +721,7 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                         self.resolution = 20.
 
                 if filetype == "fits":
-                    tmp_table = Table.read(file)
+                    tmp_table = Table.read(file, format = filetype)
                     wav = tmp_table["WAVELENGTH"].T.data
                     flux = tmp_table["FLUX"].T.data
                     err = tmp_table["ERROR"].T.data
