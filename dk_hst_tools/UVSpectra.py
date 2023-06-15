@@ -592,6 +592,14 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             except:
                 self.source_info = Simbad.query_object(self.name)
 
+            if self.source_info == None: #if simbad failed
+                fits_file_inds = self.filetypes == "fits"
+                from astropy.io import fits
+                with fits.open(self.data_files[fits_file_inds]) as fits_file:
+                    self.source_info = {"RA":[], "DEC":[]}
+                    self.source_info["RA"]=[float(fits_file[0].header["TARG_RA"]) * u.deg]
+                    self.source_info["RA"][0] = self.source_info["RA"][0].to(u.hourangle).value
+                    self.source_info["DEC"]=[float(fits_file[0].header["TARG_DEC"])]
 
             self.SkyCoord_at_LMC = SkyCoord(ra = self.source_info["RA"][0], 
                         dec = self.source_info["DEC"][0], 
