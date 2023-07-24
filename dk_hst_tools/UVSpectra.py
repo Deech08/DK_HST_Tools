@@ -524,7 +524,8 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                  use_DK_N = True, 
                  shift_night_only_at_OI = None,
                  shift_g160_at_1526 = None, 
-                 fuse_only = False):
+                 fuse_only = False,
+                 query_name = None):
 
         if not from_dataset:
             if filename.__class__ is str:
@@ -587,19 +588,32 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             customSimbad = Simbad()
             customSimbad.add_votable_fields("rvz_radvel", "rvz_type")
 
-            try:
-                self.source_info = customSimbad.query_object(self.name)
-            except:
-                self.source_info = Simbad.query_object(self.name)
+            if queyr_name == None:
+                try:
+                    self.source_info = customSimbad.query_object(self.name)
+                except:
+                    self.source_info = Simbad.query_object(self.name)
+            else:
+                try:
+                    self.source_info = customSimbad.query_object(query_name)
+                except:
+                    self.source_info = Simbad.query_object(query_name)
 
             if self.source_info == None: #if simbad failed
                 fits_file_inds = self.filetypes == "fits"
                 from astropy.io import fits
-                with fits.open(self.data_files[fits_file_inds]) as fits_file:
-                    self.source_info = {"RA":[], "DEC":[]}
-                    self.source_info["RA"]=[float(fits_file[0].header["TARG_RA"]) * u.deg]
-                    self.source_info["RA"][0] = self.source_info["RA"][0].to(u.hourangle).value
-                    self.source_info["DEC"]=[float(fits_file[0].header["TARG_DEC"])]
+                if np.sum(fits_file_inds) == 0:
+                    with fits.open(self.data_files[fits_file_inds]) as fits_file:
+                        self.source_info = {"RA":[], "DEC":[]}
+                        self.source_info["RA"]=[float(fits_file[0].header["TARG_RA"]) * u.deg]
+                        self.source_info["RA"][0] = self.source_info["RA"][0].to(u.hourangle).value
+                        self.source_info["DEC"]=[float(fits_file[0].header["TARG_DEC"])]
+                else:
+                    with fits.open(self.data_files[fits_file_inds][0]) as fits_file:
+                        self.source_info = {"RA":[], "DEC":[]}
+                        self.source_info["RA"]=[float(fits_file[0].header["TARG_RA"]) * u.deg]
+                        self.source_info["RA"][0] = self.source_info["RA"][0].to(u.hourangle).value
+                        self.source_info["DEC"]=[float(fits_file[0].header["TARG_DEC"])]
 
             self.SkyCoord_at_LMC = SkyCoord(ra = self.source_info["RA"][0], 
                         dec = self.source_info["DEC"][0], 
@@ -826,7 +840,10 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             # customSimbad.add_votable_fields("rvz_radvel", "rvz_type")
 
             # print(f"getting Simbad Query for {self.name}")
-            self.source_info = customSimbad.query_object(self.name)
+            if query_name == None:
+                self.source_info = customSimbad.query_object(self.name)
+            else:
+                self.source_info = customSimbad.query_object(query_name)
 
             self.SkyCoord_at_LMC = SkyCoord(ra = self.source_info["RA"][0], 
                         dec = self.source_info["DEC"][0], 
@@ -901,6 +918,8 @@ class CloudyModel(CloudyModelMixin, object):
 
         if source_info == None:
             self.source_info = Simbad.query_object(self.source_name)
+        else:
+            self.source_info = source_info
 
         if source_coord is None:
             self.source_coord = SkyCoord(ra = self.source_info["RA"], 

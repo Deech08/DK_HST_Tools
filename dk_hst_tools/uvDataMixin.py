@@ -2565,8 +2565,8 @@ class CloudyModelMixin(object):
             if (np.any([f in flags[key] for f in flag])) & ("B" not in flags[key]) & ("C" not in flags[key]):
                 try:
                     row = [key,
-                           (fit_result_low["z{}".format(key)].value - redshift)/(redshift-1) * speed_of_light.to(u.km/u.s),
-                           fit_result_low["z{}".format(key)].stderr/(redshift-1) * speed_of_light.to(u.km/u.s),
+                           (fit_result_low["z{}".format(key)].value - redshift)/(redshift+1) * speed_of_light.to(u.km/u.s),
+                           fit_result_low["z{}".format(key)].stderr/(redshift+1) * speed_of_light.to(u.km/u.s),
                            fit_result_low["b{}".format(key)].value * u.km/u.s, 
                            fit_result_low["b{}".format(key)].stderr * u.km/u.s, 
                            10**fit_result_low["logN{}".format(key)].value * u.cm**-2,
@@ -2577,8 +2577,8 @@ class CloudyModelMixin(object):
                 except KeyError:
                     try:
                         row = [key,
-                               (fit_result_high["z{}".format(key)].value - redshift)/(redshift-1) * speed_of_light.to(u.km/u.s),
-                               fit_result_high["z{}".format(key)].stderr/(redshift-1) * speed_of_light.to(u.km/u.s),
+                               (fit_result_high["z{}".format(key)].value - redshift)/(redshift+1) * speed_of_light.to(u.km/u.s),
+                               fit_result_high["z{}".format(key)].stderr/(redshift+1) * speed_of_light.to(u.km/u.s),
                                fit_result_high["b{}".format(key)].value * u.km/u.s, 
                                fit_result_high["b{}".format(key)].stderr * u.km/u.s, 
                                10**fit_result_high["logN{}".format(key)].value * u.cm**-2,
@@ -2589,8 +2589,8 @@ class CloudyModelMixin(object):
                                ]
                     except KeyError:
                         row = [key,
-                               (fit_result_fuse["z{}".format(key)].value - redshift)/(redshift-1) * speed_of_light.to(u.km/u.s),
-                               fit_result_fuse["z{}".format(key)].stderr(redshift-1) * speed_of_light.to(u.km/u.s),
+                               (fit_result_fuse["z{}".format(key)].value - redshift)/(redshift+1) * speed_of_light.to(u.km/u.s),
+                               fit_result_fuse["z{}".format(key)].stderr(redshift+1) * speed_of_light.to(u.km/u.s),
                                fit_result_fuse["b{}".format(key)].value * u.km/u.s, 
                                fit_result_fuse["b{}".format(key)].stderr * u.km/u.s, 
                                10**fit_result_fuse["logN{}".format(key)].value * u.cm**-2,
