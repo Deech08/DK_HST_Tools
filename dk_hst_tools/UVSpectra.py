@@ -588,7 +588,7 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             customSimbad = Simbad()
             customSimbad.add_votable_fields("rvz_radvel", "rvz_type")
 
-            if queyr_name == None:
+            if query_name == None:
                 try:
                     self.source_info = customSimbad.query_object(self.name)
                 except:
