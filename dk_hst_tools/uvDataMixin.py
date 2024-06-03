@@ -20,7 +20,7 @@ import glob
 from spectral_cube import SpectralCube
 
 
-from .sbiKit import sbiKit
+# from .sbiKit import sbiKit
 
 from lmfit import Parameters
 
@@ -1198,6 +1198,7 @@ class UVSpectraMixin(object):
         from_file: `str`, optional, must be keyword
             if provided, loads sbiKit from filename provided
         """
+        from .sbiKit import sbiKit
 
         return sbiKit(self, ion, mask_limits = mask_limits, from_file = from_file)
 
@@ -1225,7 +1226,8 @@ class UVSpectraMixin(object):
         """
         from VoigtFit.container.lines import show_transitions
         from VoigtFit.funcs.voigt import Voigt, convolve_numba
-        from scipy.signal import fftconvolve, gaussian
+        from scipy.signal import fftconvolve
+        from scipy.signal.windows import gaussian
 
         # find the right transition
         atomic_data = show_transitions(ion = ion_wav.split("_")[0])
@@ -1489,11 +1491,12 @@ class UVSpectraRawMixin(object):
 
         """
         # Check data files
+        
 
         to_remove_inds = []
         for ell,region in enumerate(self.dataset.regions):
             try:
-                if region.specID.split("_")[-1] != str(self.filter_dict[self.tag_file_pairs[region.lines[0].tag]]):
+                if self.specID_to_suffix[region.specID] not in self.tag_file_pairs[region.lines[0].tag]:
                     to_remove_inds.append(ell)
             except KeyError:
                 pass
@@ -1529,7 +1532,8 @@ class UVSpectraRawMixin(object):
         """
         from VoigtFit.container.lines import show_transitions
         from VoigtFit.funcs.voigt import Voigt, convolve
-        from scipy.signal import fftconvolve, gaussian
+        from scipy.signal import fftconvolve
+        from scipy.signal.windows import gaussian
 
         # find the right transition
         atomic_data = show_transitions(ion = ion_wav.split("_")[0])
@@ -1680,7 +1684,7 @@ class UVSpectraRawMixin(object):
         # Get data
         wl, spec, err, spectra_mask_o = self.dataset.regions[region_ind].unpack()
         if not self.pre_rebin:
-            if self.dataset.regions[region_ind].specID.split("_")[-1] != str(self.filter_dict["G160M"]):
+            if self.specID_to_suffix[self.dataset.regions[region_ind].specID] != "G160M":
                 rebin_n = 5
             else:
                 rebin_n = 3
@@ -2091,7 +2095,7 @@ class UVSpectraRawMixin(object):
             spec = region.flux
             err = region.err
             if not self.pre_rebin:
-                if region.specID.split("_")[-1] != str(self.filter_dict["G160M"]):
+                if self.specID_to_suffix[region.specID] != "G160M":
                     rebin_n = 5
                 else:
                     rebin_n = 3
@@ -2111,7 +2115,7 @@ class UVSpectraRawMixin(object):
 
             if plot_cont:
                 if not self.pre_rebin:
-                    if region.specID.split("_")[-1] != str(self.filter_dict["G160M"]):
+                    if self.specID_to_suffix[region.specID] != "G160M":
                         rebin_n = 5
                     else:
                         rebin_n = 3
@@ -2324,6 +2328,7 @@ class UVSpectraRawMixin(object):
         vel_thresh_to_z = 5./ speed_of_light.to(u.km/u.s).value
         
         pars = Parameters()
+        pars += self.dataset.static_variables
         for ion in self.dataset.components.keys():
             for n, comp in enumerate(self.dataset.components[ion]):
                 ion = ion.replace('*', 'x')

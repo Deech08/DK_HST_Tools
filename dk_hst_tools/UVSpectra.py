@@ -63,7 +63,7 @@ def prepare_night_only_data(directory, output_filename = None):
 
 
     # default output file
-    if output_filename == None:
+    if output_filename is None:
         output_filename = f"{source_name}_spec-G130M-N-DK"
 
     from scipy.interpolate import interp1d
@@ -392,14 +392,14 @@ class UVSpectra(UVSpectraMixin, Table):
 
         # check for voigtfit data
 
-        if voigtfit_files == None:
+        if voigtfit_files is None:
             self.voigtfit_files = {"LOW":glob.glob(os.path.join(self.path,"*","*_VoigtFit_DK_vSeparate2_Low.hdf5")),
                                    "HIGH":glob.glob(os.path.join(self.path,"*","*_VoigtFit_DK_vSeparate2_High.hdf5")),
                                    "FUSE":glob.glob(os.path.join(self.path,"*","*_VoigtFit_DK_FUSE_OVI_v2.hdf5"))}
         else:
             self.voigtfit_files = voigtfit_files
 
-        if voigtfit == None:
+        if voigtfit is None:
             self.voigtfit = {}
             if len(self.voigtfit_files["LOW"]) > 0:
                 for fl in self.voigtfit_files["LOW"]:
@@ -413,7 +413,7 @@ class UVSpectra(UVSpectraMixin, Table):
                     self.voigtfit[sn]["FUSE"]=UVSpectraRaw(ff, from_dataset = True)
 
 
-        if voigtfit_flags == None:
+        if voigtfit_flags is None:
             self.voigtfit_flags = {}
             if len(self.voigtfit_files["LOW"]) > 0:
                 for f in self.voigtfit_files["LOW"]:
@@ -538,12 +538,12 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             self.filetypes = [fname.split("/")[-1].split(".")[-1] for fname in self.data_files]
             
 
-            if resolution == None:
+            if resolution is None:
                 self.resolution = 20. # COS
             else:
                 self.resolution = resolution
 
-            if name == None:
+            if name is None:
                 if self.filetypes[0]=="fits":
                     self.name = self.data_files[0].split("hst_cos_")[-1].split("_")[0]
                 else:
@@ -551,7 +551,7 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             else:
                 self.name = name
 
-            if lines == None:
+            if lines is None:
                 # set default set of lines
                 self.lines = lines = ["CII_1334", 
                          "CIV_1548", "CIV_1550",
@@ -565,12 +565,12 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             else:
                 self.lines = lines
 
-            if velspan == None:
+            if velspan is None:
                 self.velspan = 500.
             else:
                 self.velspan = velspan
 
-            if rebin_n == None:
+            if rebin_n is None:
                 self.rebin_n = 5
             else:
                 self.rebin_n = rebin_n
@@ -578,7 +578,7 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             if pre_rebin:
                 self.rebin_n = 1
 
-            if rebin_method == None:
+            if rebin_method is None:
                 self.rebin_method = "mean"
             else:
                 self.rebin_method = rebin_method
@@ -588,7 +588,7 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             customSimbad = Simbad()
             customSimbad.add_votable_fields("rvz_radvel", "rvz_type")
 
-            if query_name == None:
+            if query_name is None:
                 try:
                     self.source_info = customSimbad.query_object(self.name)
                 except:
@@ -599,7 +599,7 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                 except:
                     self.source_info = Simbad.query_object(query_name)
 
-            if self.source_info == None: #if simbad failed
+            if self.source_info is None: #if simbad failed
                 fits_file_inds = self.filetypes == "fits"
                 from astropy.io import fits
                 if np.sum(fits_file_inds) == 0:
@@ -628,7 +628,7 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             self.redshift_from_rv =self.SkyCoord_at_LMC.transform_to(LSR()).radial_velocity/speed_of_light
             self.redshift_from_rv = -1*self.redshift_from_rv.decompose().value
 
-            if redshift == None:
+            if redshift is None:
                 self.redshift = self.redshift_from_rv
             else:
                 self.redshift = redshift
@@ -667,25 +667,25 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                     except IndexError:
                         pass
 
-                    self.tag_file_pairs = {"OI_1302":"G130M-N-DK", 
-                                      "OI_1039":"LIF1", 
-                                      "SiII_1304":"G130M-N-DK",
-                                      "SiIV_1402":"G130M",
-                                      "SiIV_1393":"G130M",
-                                      "SiIII_1206":"G130M",
-                                      "SiII_1260":"G130M",
-                                      "SiII_1193":"G130M",
-                                      "SiII_1190":"G130M",
-                                      "CII_1334":"G130M",
-                                      "CIIa_1335.7":"G130M",
-                                      "CIIa_1335.71":"G130M",
-                                      "FeII_1144":"G130M",
-                                      "SII_1250":"G130M",
-                                      "SII_1253":"G130M",
-                                      "SII_1259":"G130M",
-                                      "NI_1200.7":"G130M",
-                                      "NI_1200":"G130M",
-                                      "NI_1199":"G130M"}
+                    self.tag_file_pairs = {"OI_1302":["G130M-N-DK"], 
+                                      "OI_1039":["LIF1"], 
+                                      "SiII_1304":["G130M-N-DK"],
+                                      "SiIV_1402":["G130M"],
+                                      "SiIV_1393":["G130M"],
+                                      "SiIII_1206":["G130M"],
+                                      "SiII_1260":["G130M"],
+                                      "SiII_1193":["G130M"],
+                                      "SiII_1190":["G130M"],
+                                      "CII_1334":["G130M"],
+                                      "CIIa_1335.7":["G130M"],
+                                      "CIIa_1335.71":["G130M"],
+                                      "FeII_1144":["G130M"],
+                                      "SII_1250":["G130M"],
+                                      "SII_1253":["G130M"],
+                                      "SII_1259":["G130M"],
+                                      "NI_1200.7":["G130M"],
+                                      "NI_1200":["G130M"],
+                                      "NI_1199":["G130M"]}
 
                 else:
 
@@ -709,25 +709,25 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                     except IndexError:
                         pass 
 
-                    self.tag_file_pairs = {"OI_1302":"G130M-N",  
-                                      "OI_1039":"LIF1", 
-                                      "SiII_1304":"G130M-N",
-                                      "SiIV_1402":"G130M",
-                                      "SiIV_1393":"G130M",
-                                      "SiIII_1206":"G130M",
-                                      "SiII_1260":"G130M",
-                                      "SiII_1193":"G130M",
-                                      "SiII_1190":"G130M",
-                                      "CII_1334":"G130M",
-                                      "CIIa_1335.7":"G130M",
-                                      "CIIa_1335.71":"G130M",
-                                      "FeII_1144":"G130M",
-                                      "SII_1250":"G130M",
-                                      "SII_1253":"G130M",
-                                      "SII_1259":"G130M",
-                                      "NI_1200.7":"G130M",
-                                      "NI_1200":"G130M",
-                                      "NI_1199":"G130M"}
+                    self.tag_file_pairs = {"OI_1302":["G130M-N"],  
+                                      "OI_1039":["LIF1"], 
+                                      "SiII_1304":["G130M-N"],
+                                      "SiIV_1402":["G130M"],
+                                      "SiIV_1393":["G130M"],
+                                      "SiIII_1206":["G130M"],
+                                      "SiII_1260":["G130M"],
+                                      "SiII_1193":["G130M"],
+                                      "SiII_1190":["G130M"],
+                                      "CII_1334":["G130M"],
+                                      "CIIa_1335.7":["G130M"],
+                                      "CIIa_1335.71":["G130M"],
+                                      "FeII_1144":["G130M"],
+                                      "SII_1250":["G130M"],
+                                      "SII_1253":["G130M"],
+                                      "SII_1259":["G130M"],
+                                      "NI_1200.7":["G130M"],
+                                      "NI_1200":["G130M"],
+                                      "NI_1199":["G130M"]}
 
 
 
@@ -780,11 +780,11 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                                                          rebin_n, method = self.rebin_method)
                     self.dataset.add_data(wl_r, spec_r, self.resolution, 
                                       err = err_r, 
-                                      normalized = False)
+                                      normalized = False, filename = suffix)
                 else:
                     self.dataset.add_data(wav[~mask], flux[~mask], self.resolution, 
                                       err = err[~mask], 
-                                      normalized = False)
+                                      normalized = False, filename = suffix)
 
 
             # Add relevent lines to dataset
@@ -792,7 +792,10 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                 print(line)
                 self.dataset.add_line(line, velspan = self.velspan)
 
-
+            self.specID_list = [region.specID for region in self.dataset.regions]
+            self.specID_to_suffix = {}
+            for specID,suffix in zip(self.specID_list, self.file_suffix):
+                self.specID_to_suffix["{}".format(specID)] = suffix
             if filter_regions:
                 self.filter_regions()
 
@@ -802,7 +805,7 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             #loading from existing dataset
             self.data_files = [filename]
 
-            if resolution == None:
+            if resolution is None:
                 self.resolution = 20.
             else:
                 self.resolution = resolution
@@ -810,7 +813,7 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             # load dataset
             self.dataset = VoigtFit.load_dataset(filename)
 
-            if name == None:
+            if name is None:
                 self.name = self.dataset.name
             else:
                 self.name = name
@@ -822,7 +825,7 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
 
             self.velspan = self.dataset.velspan
 
-            if rebin_n == None:
+            if rebin_n is None:
                 self.rebin_n = 5
             else:
                 self.rebin_n = rebin_n
@@ -831,7 +834,7 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                 self.rebin_n = 1
                 rebin_n = 1
 
-            if rebin_method == None:
+            if rebin_method is None:
                 self.rebin_method = "mean"
             else:
                 self.rebin_method = rebin_method
@@ -840,7 +843,7 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             # customSimbad.add_votable_fields("rvz_radvel", "rvz_type")
 
             # print(f"getting Simbad Query for {self.name}")
-            if query_name == None:
+            if query_name is None:
                 self.source_info = customSimbad.query_object(self.name)
             else:
                 self.source_info = customSimbad.query_object(query_name)
@@ -860,6 +863,10 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
 
             self.redshift = self.dataset.redshift
 
+            self.specID_list = [region.specID for region in self.dataset.regions]
+            self.specID_to_suffix = {}
+            for specID,suffix in zip(self.specID_list, self.file_suffix):
+                specID_to_suffix["{}".format(specID)] = suffix
 
     def save_dataset(self, filename, in_same_folder = False):
         if not in_same_folder:
@@ -916,7 +923,7 @@ class CloudyModel(CloudyModelMixin, object):
 
         self.source_name = source_name
 
-        if source_info == None:
+        if source_info is None:
             self.source_info = Simbad.query_object(self.source_name)
         else:
             self.source_info = source_info
@@ -929,7 +936,7 @@ class CloudyModel(CloudyModelMixin, object):
         else:
             self.source_coord = source_coord.transform_to('galactic')
 
-        if distance_grid_command == None:
+        if distance_grid_command is None:
             self.distance_grid_command = [22.9,23.55,0.05]
         else:
             self.distance_grid_command = distance_grid_command
@@ -948,30 +955,30 @@ class CloudyModel(CloudyModelMixin, object):
             self.spectra_template_filename = os.path.join(directory,"data/JBH_RadiationField/Fox+2005_MW.sed")
 
 
-        if egb == None:
+        if egb is None:
             self.egb = "KS18"
         else:
             self.egb = egb
 
-        if egb_redshift == None:
+        if egb_redshift is None:
             self.egb_redshift = 0.
         else:
             self.egb_redshift = egb_redshift
 
         self.cosmic_rays_background = cosmic_rays_background
 
-        if species == None:
+        if species is None:
             self.species = ["H", "H+", "Si+", "Si+2", "Si+3", "C+", "C+3", "Fe+", "Al+", "O"]
         else:
             self.species = species
 
 
-        if metalicity_grid_command == None:
+        if metalicity_grid_command is None:
             self.metalicity_grid_command = [-0.7,-0.1,0.2]
         else:
             self.metalicity_grid_command = metalicity
 
-        if hden_grid_command == None:
+        if hden_grid_command is None:
             self.hden_grid_command = [-3,0,0.5]
         else:
             self.hden_grid_command = hden_grid_command
@@ -990,7 +997,7 @@ class CloudyModel(CloudyModelMixin, object):
         Returns string of input file as list for each line of file
         """ 
 
-        if distance == None:
+        if distance is None:
             distance = 50*u.kpc
 
         coord_3d = SkyCoord(l = self.source_coord.l, 
@@ -1006,7 +1013,7 @@ class CloudyModel(CloudyModelMixin, object):
             import shutil
             shutil.copy(self.spectra_template_filename, "./")
 
-        if stop_OI_column == None:
+        if stop_OI_column is None:
             stop_OI_column = self.stop_OI_column
 
 
@@ -1036,7 +1043,7 @@ class CloudyModel(CloudyModelMixin, object):
         else:
             file_lines.append(f'metals {self.metalicity_grid_command} log')
         file_lines.append('# Stop condition')
-        if stop_OI_column == None:
+        if stop_OI_column is None:
             file_lines.append(f'stop neutral column density {stop_neutral_column_density}')
             stop_val = stop_neutral_column_density
         else:
@@ -1106,33 +1113,33 @@ class CloudyGridViewer(object):
         Interactive plot of cloudy results with slides to control the plotted distances, stop_colN, or METALS
         """
 
-        if ions == None:
+        if ions is None:
             self.ions = ["HI", "HII", "OI", "FeII", "AlII", "SiII", "SiIII", "SiIV", "CII", "CIV"]
         else:
             self.ions = ions
 
-        if figsize == None:
+        if figsize is None:
             figsize = (8.5,11)
 
-        if cloudy_results == None:
+        if cloudy_results is None:
             assert cloudy.cloudy_results != None
             self.cloudy_results = cloudy.cloudy_results
         else:
             self.cloudy_results = cloudy_results
 
-        if cmap == None:
+        if cmap is None:
             self.cmap = "plasma"
         else:
             self.cmap = cmap
             
-        if vel_range == None:
+        if vel_range is None:
             self.vel_min = -200
             self.vel_max = 600
         else:
             self.vel_min = vel_range[0]
             self.vel_max = vel_range[1]
             
-        if meas == None:
+        if meas is None:
             self.meas = cloudy.meas  
         else:
             self.meas = meas  
