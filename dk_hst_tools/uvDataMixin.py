@@ -1706,8 +1706,8 @@ class UVSpectraRawMixin(object):
         vel = (wl - l_ref) / l_ref * speed_of_light.to(u.km/u.s).value
         vel_r = (wl_r - l_ref) / l_ref * speed_of_light.to(u.km/u.s).value
 
-        profile = self.get_profile(tag, ion_pars, vel_arr = vel)
-        profile_r = self.get_profile(tag, ion_pars, vel_arr = vel_r)
+        profile = self.get_profile(tag, ion_pars, vel_arr = vel, resolution = self.dataset.regions[region_ind].res)
+        profile_r = self.get_profile(tag, ion_pars, vel_arr = vel_r, resolution = self.dataset.regions[region_ind].res)
 
         resid = profile_r["spec"] - spec_r
         cont_err = self.dataset.regions[region_ind].cont_err

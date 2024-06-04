@@ -637,10 +637,29 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             self.dataset = VoigtFit.DataSet(self.redshift)
             self.dataset.set_name(self.name)
 
+            self.file_suffix = []
+            for fn in self.data_files:
+                if "g130m" in fn.lower():
+                    if "G130M-N-DK" in fn:
+                        self.file_suffix.append("G130M-N-DK")
+                    elif "G130M-N" in fn:
+                        self.file_suffix.append("G130M-N")
+                    else:
+                        self.file_suffix.append("G130M")
+                elif "g160m" in fn.lower():
+                    self.file_suffix.append("G160M")
+                elif "e140m" in fn.lower():
+                    self.file_suffix.append("E140M")
+                elif "e140h" in fn.lower():
+                    self.file_suffix.append("E140H")
+                elif "LIF1" in fn.lower():
+                    self.file_suffix.append("LIF1")
+                else:
+                    self.file_suffix.append(fn.split("{}_".format(self.name))[-1].split("_")[0].upper())
 
             
-            self.file_suffix = np.array([f.split("{}_".format(self.name))[-1].split("_")[0].upper() if ft == "fits" 
-                                         else f.split("_spec-")[-1] for f,ft in zip(self.data_files, self.filetypes)])
+            # self.file_suffix = np.array([f.split("{}_".format(self.name))[-1].split("_")[0].upper() if ft == "fits" 
+            #                              else f.split("_spec-")[-1] for f,ft in zip(self.data_files, self.filetypes)])
             if filter_regions:
             
                 
@@ -739,7 +758,15 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                     if suffix == "G160M":
                         self.resolution = 15.
                         print("Setting G160M resolution to 15 km/s")
-                    else:
+                    elif "e140m" in file:
+                        self.resolution = 6.5
+                    elif "e140h" in file:
+                        self.resolution = 2.5
+                    elif "g130m" in file:
+                        self.resolution = 20.
+                    elif "fuse" in file:
+                        self.resolution = 20.
+                    elif suffix == "LIF1":
                         self.resolution = 20.
 
                 if filetype == "fits":
@@ -772,10 +799,19 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                     wav += wav_shift
                     print("shifting G160M data by {}".format(wav_shift))
                 if pre_rebin:
-                    if suffix == "G160M":
-                        rebin_n = 3
-                    else:
-                        rebin_n = 5
+                    if rebin_n is None:
+                        if suffix == "G160M":
+                            rebin_n = 3
+                        elif suffix in ["G130M", "LIF1"]:
+                            rebin_n = 5
+                        elif "fuse" in file:
+                            rebin_n = 5
+                        elif suffix == "E140M":
+                            rebin_n = 1
+                        elif suffix == "E140H":
+                            rebin_n = 1
+                        else:
+                            rebin_n = 3
                     wl_r, spec_r, err_r = rebin_spectrum(wav[~mask], flux[~mask], err[~mask], 
                                                          rebin_n, method = self.rebin_method)
                     self.dataset.add_data(wl_r, spec_r, self.resolution, 
@@ -790,7 +826,10 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             # Add relevent lines to dataset
             for line in self.lines:
                 print(line)
-                self.dataset.add_line(line, velspan = self.velspan)
+                try:
+                    self.dataset.add_line(line, velspan = self.velspan)
+                except ValueError:
+                    print("skipping {line} - Value Error Encountered.")
 
             self.specID_list = [region.specID for region in self.dataset.regions]
             self.specID_to_suffix = {}
