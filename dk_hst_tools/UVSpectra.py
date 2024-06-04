@@ -657,6 +657,8 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                 else:
                     self.file_suffix.append(fn.split("{}_".format(self.name))[-1].split("_")[0].upper())
 
+            self.file_suffix = np.array(self.file_suffix)
+
             
             # self.file_suffix = np.array([f.split("{}_".format(self.name))[-1].split("_")[0].upper() if ft == "fits" 
             #                              else f.split("_spec-")[-1] for f,ft in zip(self.data_files, self.filetypes)])
@@ -728,9 +730,9 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                     except IndexError:
                         pass 
 
-                    self.tag_file_pairs = {"OI_1302":["G130M-N"],  
+                    self.tag_file_pairs = {"OI_1302":["G130M-N", "G130M"],  
                                       "OI_1039":["LIF1"], 
-                                      "SiII_1304":["G130M-N"],
+                                      "SiII_1304":["G130M-N", "G130M"],
                                       "SiIV_1402":["G130M"],
                                       "SiIV_1393":["G130M"],
                                       "SiIII_1206":["G130M"],
