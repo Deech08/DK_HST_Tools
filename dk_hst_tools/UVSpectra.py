@@ -570,10 +570,10 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             else:
                 self.velspan = velspan
 
-            if rebin_n is None:
-                self.rebin_n = 5
-            else:
-                self.rebin_n = rebin_n
+            # if rebin_n is None:
+            #     self.rebin_n = 1
+            # else:
+            #     self.rebin_n = rebin_n
 
             if pre_rebin:
                 self.rebin_n = 1
@@ -754,8 +754,7 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
 
             # read in data from text file
             for suffix,file,filetype in zip(self.file_suffix, self.data_files, self.filetypes):
-                print("Loading data from file, {}".format(file.split("/")[-1]))
-
+                print("Loading data from file, {0}, with filter {1}".format(file.split("/")[-1], suffix))
                 if auto_resolution:
                     if suffix == "G160M":
                         self.resolution = 15.
@@ -770,6 +769,8 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                         self.resolution = 20.
                     elif suffix == "LIF1":
                         self.resolution = 20.
+                    else:
+                        self.resolution = 15.
 
                 if filetype == "fits":
                     tmp_table = Table.read(file, format = filetype)
@@ -800,22 +801,23 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                     wav_shift = shift_g160_at_1526 / speed_of_light.to(u.km/u.s).value * l_ref
                     wav += wav_shift
                     print("shifting G160M data by {}".format(wav_shift))
-                if pre_rebin:
+                if self.pre_rebin:
                     if rebin_n is None:
                         if suffix == "G160M":
-                            rebin_n = 3
+                            self.rebin_n = 3
                         elif suffix in ["G130M", "LIF1"]:
-                            rebin_n = 5
-                        elif "fuse" in file:
-                            rebin_n = 5
+                            self.rebin_n = 5
+                        # elif "fuse" in file:
+                        #     self.rebin_n = 5
                         elif suffix == "E140M":
-                            rebin_n = 1
+                            self.rebin_n = 1
                         elif suffix == "E140H":
-                            rebin_n = 1
+                            self.rebin_n = 1
                         else:
-                            rebin_n = 3
+                            self.rebin_n = 1
                     wl_r, spec_r, err_r = rebin_spectrum(wav[~mask], flux[~mask], err[~mask], 
-                                                         rebin_n, method = self.rebin_method)
+                                                         self.rebin_n, method = self.rebin_method)
+                    print(self.rebin_n)
                     self.dataset.add_data(wl_r, spec_r, self.resolution, 
                                       err = err_r, 
                                       normalized = False, filename = suffix)
@@ -867,7 +869,7 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             self.velspan = self.dataset.velspan
 
             if rebin_n is None:
-                self.rebin_n = 5
+                self.rebin_n = 1
             else:
                 self.rebin_n = rebin_n
 
