@@ -1878,7 +1878,8 @@ class UVSpectraRawMixin(object):
                             ls = "-"
 
 
-                        single_profile = self.get_profile(tag, ion_pars, vel_arr = profile["vel"])
+                        single_profile = self.get_profile(tag, ion_pars, vel_arr = profile["vel"],
+                                                            resolution = self.dataset.regions[region_ind].res)
                         single_profile_masked = np.ma.masked_array(single_profile["spec"], 
                                                                     mask = single_profile["spec"] > .99)
 
@@ -1886,7 +1887,8 @@ class UVSpectraRawMixin(object):
                                     alpha = alpha, color = color, lw = width, ls = ls)
 
                 else:
-                    single_profile = self.get_profile(tag, ion_pars, vel_arr = profile["vel"])
+                    single_profile = self.get_profile(tag, ion_pars, vel_arr = profile["vel"],
+                                                            resolution = self.dataset.regions[region_ind].res)
                     single_profile_masked = np.ma.masked_array(single_profile["spec"], 
                                                                 mask = single_profile["spec"] > .99)
 
