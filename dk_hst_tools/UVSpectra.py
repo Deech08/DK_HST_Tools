@@ -525,7 +525,8 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
                  shift_night_only_at_OI = None,
                  shift_g160_at_1526 = None, 
                  fuse_only = False,
-                 query_name = None):
+                 query_name = None,
+                 spec_file = None):
 
         if not from_dataset:
             if filename.__class__ is str:
@@ -882,14 +883,24 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             else:
                 self.rebin_method = rebin_method
 
-            customSimbad = Simbad()
-            # customSimbad.add_votable_fields("rvz_radvel", "rvz_type")
+            if spec_file is None:
+                customSimbad = Simbad()
+                # customSimbad.add_votable_fields("rvz_radvel", "rvz_type")
 
-            # print(f"getting Simbad Query for {self.name}")
-            if query_name is None:
-                self.source_info = customSimbad.query_object(self.name)
+                # print(f"getting Simbad Query for {self.name}")
+                if query_name is None:
+                    self.source_info = customSimbad.query_object(self.name)
+                else:
+                    self.source_info = customSimbad.query_object(query_name)
+
             else:
-                self.source_info = customSimbad.query_object(query_name)
+                from astropy.io import fits
+                with fits.open(spec_file) as fits_file:
+                    self.source_info = {"RA":[], "DEC":[]}
+                    self.source_info["RA"]=[float(fits_file[0].header["TARG_RA"]) * u.deg]
+                    self.source_info["RA"][0] = self.source_info["RA"][0].to(u.hourangle).value
+                    self.source_info["DEC"]=[float(fits_file[0].header["TARG_DEC"])]
+
 
             self.SkyCoord_at_LMC = SkyCoord(ra = self.source_info["RA"][0], 
                         dec = self.source_info["DEC"][0], 
@@ -907,11 +918,12 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             self.redshift = self.dataset.redshift
 
             self.specID_list = [region.specID for region in self.dataset.regions]
-            self.specID_to_suffix = {}
-            for specID,suffix in zip(self.specID_list, self.file_suffix):
-                specID_to_suffix["{}".format(specID)] = suffix
+            # self.specID_to_suffix = {}
+            # for specID,suffix in zip(self.specID_list, self.file_suffix):
+            #     specID_to_suffix["{}".format(specID)] = suffix
 
     def save_dataset(self, filename, in_same_folder = False):
+        data.dataset.data_filenames = np.array(data.dataset.data_filenames, dtype= "S")
         if not in_same_folder:
             self.dataset.save(filename)
         else:
