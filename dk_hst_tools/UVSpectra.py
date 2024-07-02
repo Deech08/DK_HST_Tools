@@ -923,7 +923,7 @@ class UVSpectraRaw(UVSpectraRawMixin, object):
             #     specID_to_suffix["{}".format(specID)] = suffix
 
     def save_dataset(self, filename, in_same_folder = False):
-        self.dataset.data_filenames = np.array(data.dataset.data_filenames, dtype= "S")
+        self.dataset.data_filenames = np.array(self.dataset.data_filenames, dtype= "S")
         if not in_same_folder:
             self.dataset.save(filename)
         else:
